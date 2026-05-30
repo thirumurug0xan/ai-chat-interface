@@ -39,11 +39,11 @@ class ModelEngine:
         "AUTO": "AUTO",
         "GPU": "GPU",
         "CPU": "CPU",
-        "CPU+GPU": "HETERO:GPU,CPU",
+        "XPU": "HETERO:GPU,CPU",
     }
 
     # All user-facing device options
-    AVAILABLE_DEVICES = ["AUTO", "GPU", "CPU", "CPU+GPU"]
+    AVAILABLE_DEVICES = ["AUTO", "GPU", "CPU", "XPU"]
 
     def __init__(self):
         self.model_path = os.getenv("MODEL_PATH", "./qwen-0.5b-ov")
@@ -135,7 +135,7 @@ class ModelEngine:
             Dict with keys: success, active_device, requested_device, message.
         """
         new_device = new_device.upper().strip()
-        if new_device not in self._DEVICE_MAP and new_device not in ("CPU+GPU",):
+        if new_device not in self._DEVICE_MAP:
             return {
                 "success": False,
                 "active_device": self._active_device,
@@ -224,7 +224,7 @@ class ModelEngine:
             return "None"
         upper = ov_device.upper()
         if "HETERO" in upper:
-            return "CPU+GPU"
+            return "XPU"
         return upper
 
     def _get_device_fallback_order(self) -> list[str]:
@@ -236,7 +236,7 @@ class ModelEngine:
             return ["GPU", "CPU"]
         elif device == "CPU":
             return ["CPU"]
-        elif device == "CPU+GPU":
+        elif device == "XPU":
             return ["HETERO:GPU,CPU", "GPU", "CPU"]
         else:
             # Could be a raw OpenVINO string like HETERO:GPU,CPU
