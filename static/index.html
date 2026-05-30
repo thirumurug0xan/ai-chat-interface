@@ -90,7 +90,7 @@
                         <div class="memory-section-label">
                             <span class="memory-label-text">
                                 <span class="memory-dot ram-dot"></span>
-                                System RAM
+                                <span id="ram-memory-label">System RAM</span>
                             </span>
                             <span class="memory-values" id="ram-memory-values">—</span>
                         </div>
@@ -101,6 +101,7 @@
                             <span id="ram-memory-used">—</span>
                             <span id="ram-memory-free">Free: —</span>
                         </div>
+                        <div class="memory-note" id="ram-memory-note" style="display: none;"></div>
                     </div>
                 </div>
 
@@ -187,7 +188,15 @@
                         <div class="input-hint">
                             <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line · <kbd>Ctrl+N</kbd> new chat
                         </div>
-                        <div class="char-count" id="char-count">0</div>
+                        <div class="input-footer-right">
+                            <div class="context-window" id="context-window" title="Context window usage">
+                                <div class="context-bar-track">
+                                    <div class="context-bar-fill" id="context-bar-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="context-label" id="context-label">0 / 1024</span>
+                            </div>
+                            <div class="char-count" id="char-count">0</div>
+                        </div>
                     </div>
                 </div>
             </div>

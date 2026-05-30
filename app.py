@@ -61,6 +61,35 @@ def system_stats():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/context/count", methods=["POST"])
+def context_count():
+    """
+    Count how many tokens the given message history consumes.
+
+    Expects JSON body:
+        { "messages": [{"role": "user", "content": "Hello"}, ...] }
+
+    Returns:
+        { "used_tokens": N, "max_tokens": M, "percent": P }
+    """
+    data = request.get_json()
+    if not data or "messages" not in data:
+        return jsonify({"error": "Missing 'messages'"}), 400
+
+    if not engine.is_loaded():
+        return jsonify({"error": "Model not loaded"}), 503
+
+    used = engine.count_tokens(data["messages"])
+    max_tok = engine.max_input_tokens
+    pct = round((used / max_tok) * 100, 1) if max_tok > 0 else 0
+
+    return jsonify({
+        "used_tokens": used,
+        "max_tokens": max_tok,
+        "percent": min(pct, 100),
+    })
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """
@@ -93,9 +122,14 @@ def chat():
     def stream():
         try:
             for chunk in engine.generate_stream(messages):
-                # SSE format: data: <json>\n\n
-                payload = json.dumps({"chunk": chunk})
-                yield f"data: {payload}\n\n"
+                if isinstance(chunk, dict) and "__meta__" in chunk:
+                    # Forward generation metadata as a separate SSE event
+                    payload = json.dumps({"meta": chunk["__meta__"]})
+                    yield f"data: {payload}\n\n"
+                else:
+                    # SSE format: data: <json>\n\n
+                    payload = json.dumps({"chunk": chunk})
+                    yield f"data: {payload}\n\n"
 
             # Signal that generation is complete
             yield "data: [DONE]\n\n"
