@@ -67,7 +67,7 @@ def device_switch():
     Switch the inference device at runtime.
 
     Expects JSON body:
-        { "device": "GPU" | "CPU" | "AUTO" | "CPU+GPU" }
+        { "device": "GPU" | "CPU" | "AUTO" | "XPU" }
 
     Returns:
         { "success": bool, "active_device": str, "requested_device": str,

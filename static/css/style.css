@@ -363,6 +363,11 @@ body {
     padding: 0 4px;
 }
 
+/* Allow dropdown overflow when open so it is not clipped by parent container */
+.sidebar-panel-body:has(.device-selector.open) {
+    overflow: visible !important;
+}
+
 /* Model info, memory, util-graphs inside panels — remove redundant top margin */
 .sidebar-panel-body .model-info {
     margin-top: 0;
@@ -525,7 +530,8 @@ body {
 
 .device-dropdown {
     position: absolute;
-    bottom: calc(100% + 8px);
+    top: calc(100% + 8px);
+    bottom: auto;
     right: 0;
     width: 240px;
     background: rgba(16, 16, 34, 0.97);
@@ -537,7 +543,7 @@ body {
     z-index: 300;
     opacity: 0;
     visibility: hidden;
-    transform: translateY(8px) scale(0.96);
+    transform: translateY(-8px) scale(0.96);
     transition: all var(--transition-normal);
     overflow: hidden;
 }

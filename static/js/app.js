@@ -1399,7 +1399,7 @@ function updateDeviceBadge(friendlyDevice, requestedDevice) {
 
     // Determine badge CSS class
     let badgeClass = "device-badge ";
-    if (friendly.includes("HETERO") || friendly === "CPU+GPU") {
+    if (friendly.includes("HETERO") || friendly === "CPU+GPU" || friendly === "XPU") {
         badgeClass += "hetero";
     } else if (friendly === "GPU") {
         badgeClass += "gpu";
