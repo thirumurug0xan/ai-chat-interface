@@ -1248,3 +1248,93 @@ body {
     border-left: 2px solid rgba(255, 165, 2, 0.3);
 }
 
+/* ── Message Stats (token/sec) ───────────────────────────────────────── */
+.message-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    opacity: 0.7;
+    transition: opacity var(--transition-fast);
+}
+
+.message:hover .message-stats {
+    opacity: 1;
+}
+
+.stats-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.stats-separator {
+    color: var(--border-medium);
+    font-size: 10px;
+}
+
+/* ── Retry Button ────────────────────────────────────────────────────── */
+.btn-retry {
+    color: var(--text-tertiary) !important;
+    transition: all var(--transition-fast);
+}
+
+.btn-retry:hover {
+    color: var(--accent-2) !important;
+    background: rgba(0, 206, 201, 0.08) !important;
+    border-color: rgba(0, 206, 201, 0.25) !important;
+}
+
+/* ── Context Window Indicator ────────────────────────────────────────── */
+.input-footer-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.context-window {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: default;
+}
+
+.context-bar-track {
+    width: 60px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    position: relative;
+}
+
+.context-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+                background 0.5s ease;
+    min-width: 0;
+}
+
+.context-bar-fill.warning {
+    background: linear-gradient(90deg, #ffa502, #ff6348);
+}
+
+.context-bar-fill.critical {
+    background: linear-gradient(90deg, #ff4757, #ff6b6b);
+    animation: pulse-bar 1.5s infinite;
+}
+
+.context-label {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    white-space: nowrap;
+}
+

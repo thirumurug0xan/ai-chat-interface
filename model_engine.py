@@ -7,6 +7,7 @@ reusable class that the Flask app consumes.
 
 import os
 import gc
+import time
 import warnings
 import threading
 from dotenv import load_dotenv
@@ -168,6 +169,27 @@ class ModelEngine:
 
         return trimmed
 
+    def count_tokens(self, history: list[dict]) -> int:
+        """
+        Count the number of tokens that the given message history
+        would consume after applying the chat template.
+
+        Args:
+            history: List of {"role": "user"|"assistant", "content": "..."} dicts.
+
+        Returns:
+            The token count.
+        """
+        if not self._loaded:
+            return 0
+        try:
+            text = self.tokenizer.apply_chat_template(
+                history, tokenize=False, add_generation_prompt=True
+            )
+            return len(self.tokenizer.encode(text))
+        except Exception:
+            return 0
+
     def generate(self, history: list[dict]) -> str:
         """
         Generate a response given a conversation history.
@@ -269,9 +291,15 @@ class ModelEngine:
             self._lock.release()
 
         # Stream tokens outside the lock
+        token_count = 0
+        start_time = None
         try:
             for chunk in streamer:
                 if chunk:
+                    if start_time is None:
+                        start_time = time.perf_counter()
+                    # Count tokens in this chunk
+                    token_count += len(self.tokenizer.encode(chunk, add_special_tokens=False))
                     yield chunk
         except Exception as e:
             if _is_gpu_oom_error(e):
@@ -295,6 +323,17 @@ class ModelEngine:
                 yield "\n\n⚠️ GPU ran out of memory. Please start a new conversation or switch to CPU."
             else:
                 raise RuntimeError(f"Generation failed: {err}") from err
+
+        # Compute and yield generation metadata
+        elapsed = time.perf_counter() - start_time if start_time else 0
+        tps = round(token_count / elapsed, 1) if elapsed > 0 else 0
+        yield {
+            "__meta__": {
+                "tokens": token_count,
+                "elapsed_sec": round(elapsed, 2),
+                "tokens_per_sec": tps,
+            }
+        }
 
         # Encourage garbage collection after generation to free GPU memory
         gc.collect()

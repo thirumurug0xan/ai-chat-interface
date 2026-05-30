@@ -13,6 +13,7 @@ const state = {
     abortController: null,
     modelConfig: null,
     maxTokens: 512,
+    maxInputTokens: 1024,       // context window size from config
 };
 
 // ── DOM References ───────────────────────────────────────────────────────────
@@ -53,10 +54,16 @@ const dom = {
     gpuMemoryUsed: $("#gpu-memory-used"),
     gpuMemoryFree: $("#gpu-memory-free"),
     gpuMemoryNote: $("#gpu-memory-note"),
+    ramMemoryLabel: $("#ram-memory-label"),
     ramMemoryValues: $("#ram-memory-values"),
     ramMemoryBar: $("#ram-memory-bar"),
     ramMemoryUsed: $("#ram-memory-used"),
     ramMemoryFree: $("#ram-memory-free"),
+    ramMemoryNote: $("#ram-memory-note"),
+    // Context window
+    contextWindow: $("#context-window"),
+    contextBarFill: $("#context-bar-fill"),
+    contextLabel: $("#context-label"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -161,6 +168,12 @@ async function fetchConfig() {
             dom.maxTokensSlider.value = data.max_new_tokens;
             dom.maxTokensDisplay.textContent = data.max_new_tokens;
         }
+
+        // Store context window size
+        if (data.max_input_tokens) {
+            state.maxInputTokens = data.max_input_tokens;
+            updateContextWindowUI(0, data.max_input_tokens);
+        }
     } catch (err) {
         setStatus("error", "Disconnected");
         dom.modelStatus.textContent = "Error";
@@ -251,6 +264,8 @@ async function generateResponse(conv) {
     contentEl.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
     scrollToBottom();
 
+    let generationMeta = null;
+
     try {
         const res = await fetch("/api/chat", {
             method: "POST",
@@ -294,6 +309,12 @@ async function generateResponse(conv) {
                         throw new Error(parsed.error);
                     }
 
+                    // Capture generation metadata (tokens/sec etc.)
+                    if (parsed.meta) {
+                        generationMeta = parsed.meta;
+                        continue;
+                    }
+
                     if (parsed.chunk) {
                         if (firstChunk) {
                             contentEl.innerHTML = "";
@@ -314,6 +335,11 @@ async function generateResponse(conv) {
         // Update message content
         assistantMsg.content = fullResponse;
 
+        // Store meta on the message for later display
+        if (generationMeta) {
+            assistantMsg.meta = generationMeta;
+        }
+
         // Handle empty response
         if (!fullResponse || !fullResponse.trim()) {
             assistantMsg.content = "(No response generated — the model returned empty output.)";
@@ -322,6 +348,11 @@ async function generateResponse(conv) {
             // Final render with proper markdown
             contentEl.innerHTML = renderMarkdown(fullResponse);
             attachCodeCopyButtons(contentEl);
+        }
+
+        // Render generation stats footer
+        if (generationMeta) {
+            renderMessageStats(msgEl, generationMeta);
         }
 
     } catch (err) {
@@ -345,6 +376,39 @@ async function generateResponse(conv) {
         dom.btnSend.title = "Send message (Enter)";
         saveState();
         scrollToBottom();
+
+        // Update context window after generation
+        fetchContextUsage(conv);
+    }
+}
+
+// ── Render generation stats (tok/s) below a message ──────────────────────
+function renderMessageStats(msgEl, meta) {
+    // Remove any existing stats
+    const existing = msgEl.querySelector(".message-stats");
+    if (existing) existing.remove();
+
+    const statsDiv = document.createElement("div");
+    statsDiv.className = "message-stats";
+
+    const tps = meta.tokens_per_sec || 0;
+    const tokens = meta.tokens || 0;
+    const elapsed = meta.elapsed_sec || 0;
+
+    statsDiv.innerHTML = `
+        <span class="stats-item" title="Tokens per second">⚡ ${tps} tok/s</span>
+        <span class="stats-separator">·</span>
+        <span class="stats-item" title="Total tokens generated">${tokens} tokens</span>
+        <span class="stats-separator">·</span>
+        <span class="stats-item" title="Generation time">${elapsed}s</span>
+    `;
+
+    // Insert after message-content, before message-actions
+    const actionsEl = msgEl.querySelector(".message-actions");
+    if (actionsEl) {
+        msgEl.insertBefore(statsDiv, actionsEl);
+    } else {
+        msgEl.appendChild(statsDiv);
     }
 }
 
@@ -454,6 +518,9 @@ function renderActiveConversation() {
     container.querySelectorAll(".message.assistant .message-content").forEach(attachCodeCopyButtons);
 
     scrollToBottom(false);
+
+    // Update context window for the loaded conversation
+    fetchContextUsage(conv);
 }
 
 function appendMessageToDOM(msg, animate = true) {
@@ -467,6 +534,12 @@ function appendMessageToDOM(msg, animate = true) {
     const avatarEmoji = msg.role === "user" ? "👤" : "🧠";
     const senderName = msg.role === "user" ? "You" : (state.modelConfig?.model_name || "Assistant");
 
+    // Build action buttons — assistant messages get a retry button
+    let actionsHtml = `<button class="btn-message-action btn-copy-message" title="Copy message">📋 Copy</button>`;
+    if (msg.role === "assistant") {
+        actionsHtml += `<button class="btn-message-action btn-retry" title="Regenerate this response">🔄 Retry</button>`;
+    }
+
     div.innerHTML = `
         <div class="message-header">
             <div class="message-avatar">${avatarEmoji}</div>
@@ -475,7 +548,7 @@ function appendMessageToDOM(msg, animate = true) {
         </div>
         <div class="message-content">${msg.content ? renderMarkdown(msg.content) : ""}</div>
         <div class="message-actions">
-            <button class="btn-message-action btn-copy-message" title="Copy message">📋 Copy</button>
+            ${actionsHtml}
         </div>
     `;
 
@@ -485,6 +558,17 @@ function appendMessageToDOM(msg, animate = true) {
             showToast("Message copied!", "success");
         });
     });
+
+    // Retry button (assistant messages only)
+    const retryBtn = div.querySelector(".btn-retry");
+    if (retryBtn) {
+        retryBtn.addEventListener("click", () => handleRetry(msg, div));
+    }
+
+    // Render stored meta stats (for messages loaded from localStorage)
+    if (msg.meta) {
+        renderMessageStats(div, msg.meta);
+    }
 
     dom.chatContainer.appendChild(div);
     return div;
@@ -686,10 +770,23 @@ function updateMemoryUI(stats) {
         const ram = stats.ram;
         const ramPercent = ram.percent || 0;
 
+        // WSL2-aware label
+        if (ram.wsl2 && dom.ramMemoryLabel) {
+            dom.ramMemoryLabel.textContent = ram.label || "WSL2 Memory";
+        }
+
         dom.ramMemoryValues.textContent = `${ramPercent}%`;
         dom.ramMemoryBar.style.width = `${ramPercent}%`;
         dom.ramMemoryUsed.textContent = `Used: ${ram.used_display}`;
         dom.ramMemoryFree.textContent = `Free: ${ram.free_display}`;
+
+        // WSL2 note
+        if (ram.note && dom.ramMemoryNote) {
+            dom.ramMemoryNote.textContent = ram.note;
+            dom.ramMemoryNote.style.display = "block";
+        } else if (dom.ramMemoryNote) {
+            dom.ramMemoryNote.style.display = "none";
+        }
 
         // Color coding based on usage
         dom.ramMemoryBar.classList.remove("warning", "critical");
@@ -744,5 +841,90 @@ function updateMemoryUI(stats) {
     } else {
         // No GPU detected — hide GPU section
         dom.gpuMemorySection.style.display = "none";
+    }
+}
+
+// ── Retry Handling ───────────────────────────────────────────────────────────
+async function handleRetry(msg, msgEl) {
+    if (state.isGenerating) {
+        showToast("Please wait for the current generation to finish.", "error");
+        return;
+    }
+
+    const conv = getActiveConversation();
+    if (!conv) return;
+
+    // Find the index of this assistant message
+    const msgIndex = conv.messages.indexOf(msg);
+    if (msgIndex === -1) return;
+
+    // Remove this assistant message and everything after it
+    const removedMessages = conv.messages.splice(msgIndex);
+
+    // Remove corresponding DOM elements
+    const allMsgEls = [...dom.chatContainer.querySelectorAll(".message")];
+    const domIndex = allMsgEls.indexOf(msgEl);
+    if (domIndex !== -1) {
+        // Remove this element and all following message elements
+        for (let i = allMsgEls.length - 1; i >= domIndex; i--) {
+            allMsgEls[i].remove();
+        }
+    }
+
+    saveState();
+
+    // Re-generate
+    await generateResponse(conv);
+}
+
+// ── Context Window Tracking ──────────────────────────────────────────────────
+async function fetchContextUsage(conv) {
+    if (!conv || conv.messages.length === 0) {
+        updateContextWindowUI(0, state.maxInputTokens);
+        return;
+    }
+
+    const apiMessages = conv.messages
+        .filter(m => m.content && m.content.trim())
+        .map(m => ({ role: m.role, content: m.content }));
+
+    try {
+        const res = await fetch("/api/context/count", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: apiMessages }),
+        });
+
+        if (!res.ok) return;
+        const data = await res.json();
+
+        state.maxInputTokens = data.max_tokens || state.maxInputTokens;
+        updateContextWindowUI(data.used_tokens, data.max_tokens);
+    } catch (err) {
+        console.debug("Context count failed:", err);
+    }
+}
+
+function updateContextWindowUI(used, max) {
+    const pct = max > 0 ? Math.min((used / max) * 100, 100) : 0;
+
+    if (dom.contextBarFill) {
+        dom.contextBarFill.style.width = `${pct}%`;
+
+        // Color coding
+        dom.contextBarFill.classList.remove("warning", "critical");
+        if (pct >= 90) {
+            dom.contextBarFill.classList.add("critical");
+        } else if (pct >= 75) {
+            dom.contextBarFill.classList.add("warning");
+        }
+    }
+
+    if (dom.contextLabel) {
+        dom.contextLabel.textContent = `${used} / ${max}`;
+    }
+
+    if (dom.contextWindow) {
+        dom.contextWindow.title = `Context window: ${used} of ${max} tokens used (${Math.round(pct)}%)`;
     }
 }

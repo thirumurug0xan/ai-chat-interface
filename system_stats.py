@@ -7,7 +7,19 @@ Falls back to system RAM when GPU stats are unavailable.
 
 import os
 import subprocess
+import functools
 import psutil
+
+
+@functools.lru_cache(maxsize=1)
+def _is_wsl2() -> bool:
+    """Detect if running inside WSL2 by checking /proc/version."""
+    try:
+        with open("/proc/version", "r") as f:
+            version_str = f.read().lower()
+        return "microsoft" in version_str or "wsl" in version_str
+    except (FileNotFoundError, PermissionError):
+        return False
 
 
 def get_system_stats(active_device: str | None = None) -> dict:
@@ -20,10 +32,18 @@ def get_system_stats(active_device: str | None = None) -> dict:
     Returns:
         dict with 'gpu' (optional) and 'ram' memory stats.
     """
+    wsl2 = _is_wsl2()
+
     stats = {
-        "ram": _get_ram_stats(),
+        "ram": _get_ram_stats(wsl2=wsl2),
         "gpu": None,
+        "wsl2": wsl2,
     }
+
+    # In WSL2, GPU detection via sysfs/nvidia-smi is unreliable;
+    # skip GPU probing entirely to avoid misleading stats.
+    if wsl2:
+        return stats
 
     # Try to detect GPU memory if we're on a GPU device
     device = (active_device or "").upper()
@@ -37,10 +57,10 @@ def get_system_stats(active_device: str | None = None) -> dict:
     return stats
 
 
-def _get_ram_stats() -> dict:
+def _get_ram_stats(wsl2: bool = False) -> dict:
     """Get system RAM stats using psutil."""
     mem = psutil.virtual_memory()
-    return {
+    result = {
         "total_bytes": mem.total,
         "used_bytes": mem.used,
         "free_bytes": mem.available,
@@ -48,7 +68,15 @@ def _get_ram_stats() -> dict:
         "total_display": _format_bytes(mem.total),
         "used_display": _format_bytes(mem.used),
         "free_display": _format_bytes(mem.available),
+        "wsl2": wsl2,
     }
+    if wsl2:
+        result["label"] = "WSL2 Memory"
+        result["note"] = (
+            "Showing memory allocated to the WSL2 VM, "
+            "not the full host system RAM."
+        )
+    return result
 
 
 def _get_nvidia_gpu_stats() -> dict | None:
