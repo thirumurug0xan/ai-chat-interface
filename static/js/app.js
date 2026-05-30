@@ -272,7 +272,7 @@ async function fetchConfig() {
         updateDeviceBadge(friendlyDevice, requestedDevice);
 
         // Update device selector active state
-        updateDeviceSelectorUI(requestedDevice, friendlyDevice);
+        updateDeviceSelectorUI(requestedDevice, friendlyDevice, data.available_devices);
 
         if (data.loaded) {
             setStatus("ready", "Ready");
@@ -1343,7 +1343,7 @@ async function switchDevice(device) {
             // Successful switch
             const friendly = data.active_device_friendly || data.active_device || device;
             updateDeviceBadge(friendly, data.requested_device || device);
-            updateDeviceSelectorUI(data.requested_device || device, friendly);
+            updateDeviceSelectorUI(data.requested_device || device, friendly, state.modelConfig?.available_devices);
 
             setStatus("ready", "Ready");
             dom.modelStatus.textContent = "Loaded";
@@ -1357,7 +1357,8 @@ async function switchDevice(device) {
             updateDeviceBadge(fallbackFriendly, data.requested_device || currentRequested);
             updateDeviceSelectorUI(
                 state.modelConfig?.requested_device || currentRequested,
-                fallbackFriendly
+                fallbackFriendly,
+                state.modelConfig?.available_devices
             );
 
             if (data.active_device) {
@@ -1418,17 +1419,30 @@ function updateDeviceBadge(friendlyDevice, requestedDevice) {
     }
 }
 
-function updateDeviceSelectorUI(requestedDevice, activeFriendly) {
+function updateDeviceSelectorUI(requestedDevice, activeFriendly, availableDevices) {
     const requested = (requestedDevice || "").toUpperCase();
     const friendly = (activeFriendly || "").toUpperCase();
 
-    // Update active state on options
+    // Update active state on options and disable unavailable ones
+    const available = (availableDevices || []).map(d => d.toUpperCase());
+
     $$(".device-option").forEach((opt) => {
         const optDevice = (opt.dataset.device || "").toUpperCase();
+        
+        // Active state
         if (optDevice === requested) {
             opt.classList.add("active");
         } else {
             opt.classList.remove("active");
+        }
+
+        // Available state (AUTO and CPU are always available, others checked dynamically)
+        if (optDevice !== "AUTO" && optDevice !== "CPU" && available.length > 0 && !available.includes(optDevice)) {
+            opt.classList.add("disabled");
+            opt.title = `${optDevice} is not available on this system`;
+        } else {
+            opt.classList.remove("disabled");
+            opt.title = `Switch to ${optDevice}`;
         }
     });
 

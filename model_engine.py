@@ -247,6 +247,27 @@ class ModelEngine:
         """Check if the model is ready for inference."""
         return self._loaded
 
+    def get_physical_devices(self) -> list[str]:
+        """Detect what hardware devices are actually present and supported by OpenVINO."""
+        # AUTO and CPU are always supported
+        devices = ["AUTO", "CPU"]
+        try:
+            from openvino import Core
+            core = Core()
+            ov_devices = core.available_devices
+            ov_devices_upper = [d.upper() for d in ov_devices]
+            if "GPU" in ov_devices_upper:
+                devices.append("GPU")
+                devices.append("XPU")  # XPU maps to HETERO:GPU,CPU
+            if "NPU" in ov_devices_upper:
+                devices.append("NPU")
+        except Exception as e:
+            print(f"[ModelEngine] Warning: Could not dynamically detect devices: {e}")
+            active = (self._active_device or self.device or "").upper()
+            if "GPU" in active or "HETERO" in active:
+                devices.extend(["GPU", "XPU"])
+        return devices
+
     def get_config(self):
         """Return current configuration as a dict (safe for JSON)."""
         active = self._active_device or self.device
@@ -256,7 +277,7 @@ class ModelEngine:
             "device": active,
             "device_friendly": self._get_friendly_device_name(active),
             "requested_device": self._requested_device,
-            "available_devices": self.AVAILABLE_DEVICES,
+            "available_devices": self.get_physical_devices(),
             "switching": self._switching,
             "max_new_tokens": self.max_new_tokens,
             "max_history": self.max_history,
