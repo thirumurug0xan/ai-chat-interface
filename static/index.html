@@ -59,6 +59,51 @@
                     </div>
                 </div>
 
+                <!-- Memory Monitor Widget -->
+                <div class="memory-monitor" id="memory-monitor">
+                    <div class="memory-monitor-header">
+                        <span class="memory-monitor-title">📊 Memory</span>
+                        <span class="memory-monitor-refresh" id="memory-refresh" title="Refresh stats">↻</span>
+                    </div>
+
+                    <!-- GPU VRAM Section -->
+                    <div class="memory-section gpu-memory" id="gpu-memory-section" style="display: none;">
+                        <div class="memory-section-label">
+                            <span class="memory-label-text">
+                                <span class="memory-dot gpu-dot"></span>
+                                <span id="gpu-memory-label">GPU VRAM</span>
+                            </span>
+                            <span class="memory-values" id="gpu-memory-values">—</span>
+                        </div>
+                        <div class="memory-bar-track">
+                            <div class="memory-bar-fill gpu-fill" id="gpu-memory-bar" style="width: 0%"></div>
+                        </div>
+                        <div class="memory-details">
+                            <span id="gpu-memory-used">—</span>
+                            <span id="gpu-memory-free">Free: —</span>
+                        </div>
+                        <div class="memory-note" id="gpu-memory-note" style="display: none;"></div>
+                    </div>
+
+                    <!-- System RAM Section -->
+                    <div class="memory-section ram-memory" id="ram-memory-section">
+                        <div class="memory-section-label">
+                            <span class="memory-label-text">
+                                <span class="memory-dot ram-dot"></span>
+                                System RAM
+                            </span>
+                            <span class="memory-values" id="ram-memory-values">—</span>
+                        </div>
+                        <div class="memory-bar-track">
+                            <div class="memory-bar-fill ram-fill" id="ram-memory-bar" style="width: 0%"></div>
+                        </div>
+                        <div class="memory-details">
+                            <span id="ram-memory-used">—</span>
+                            <span id="ram-memory-free">Free: —</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="setting-group">
                     <div class="setting-label">
                         <span>Max Tokens</span>
