@@ -7,9 +7,11 @@ Serves the frontend and exposes REST + SSE endpoints for chat inference.
 import os
 import json
 import traceback
+import psutil
 from flask import Flask, request, Response, jsonify, send_from_directory
 from dotenv import load_dotenv
 from model_engine import ModelEngine
+from system_stats import get_system_stats
 
 load_dotenv()
 
@@ -42,6 +44,21 @@ def health():
 def config():
     """Return model configuration for the UI."""
     return jsonify(engine.get_config())
+
+
+@app.route("/api/system/stats", methods=["GET"])
+def system_stats():
+    """
+    System resource stats endpoint.
+
+    Returns GPU VRAM (if available) and system RAM usage.
+    """
+    try:
+        stats = get_system_stats(engine._active_device)
+        return jsonify(stats)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/chat", methods=["POST"])

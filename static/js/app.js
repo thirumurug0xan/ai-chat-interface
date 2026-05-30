@@ -43,6 +43,20 @@ const dom = {
     maxTokensDisplay: $("#max-tokens-display"),
     charCount: $("#char-count"),
     toastContainer: $("#toast-container"),
+    // Memory monitor
+    memoryMonitor: $("#memory-monitor"),
+    memoryRefresh: $("#memory-refresh"),
+    gpuMemorySection: $("#gpu-memory-section"),
+    gpuMemoryLabel: $("#gpu-memory-label"),
+    gpuMemoryValues: $("#gpu-memory-values"),
+    gpuMemoryBar: $("#gpu-memory-bar"),
+    gpuMemoryUsed: $("#gpu-memory-used"),
+    gpuMemoryFree: $("#gpu-memory-free"),
+    gpuMemoryNote: $("#gpu-memory-note"),
+    ramMemoryValues: $("#ram-memory-values"),
+    ramMemoryBar: $("#ram-memory-bar"),
+    ramMemoryUsed: $("#ram-memory-used"),
+    ramMemoryFree: $("#ram-memory-free"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -52,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fetchConfig();
     renderConversationList();
     renderActiveConversation();
+    initMemoryMonitor();
 });
 
 // ── Event Listeners ──────────────────────────────────────────────────────────
@@ -214,9 +229,16 @@ async function handleSend() {
 
 async function generateResponse(conv) {
     state.isGenerating = true;
+    state.abortController = new AbortController();
     dom.btnSend.classList.add("generating");
     dom.btnSend.innerHTML = "■";
     dom.btnSend.title = "Stop generating";
+
+    // Prepare messages for API BEFORE adding assistant placeholder
+    // Only include messages that have actual content
+    const apiMessages = conv.messages
+        .filter(m => m.content && m.content.trim())
+        .map(m => ({ role: m.role, content: m.content }));
 
     // Create assistant message placeholder
     const assistantMsg = { role: "assistant", content: "", timestamp: Date.now() };
@@ -229,17 +251,12 @@ async function generateResponse(conv) {
     contentEl.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
     scrollToBottom();
 
-    // Prepare messages for API (strip timestamps)
-    const apiMessages = conv.messages
-        .filter(m => m.content) // skip the empty assistant placeholder
-        .slice(0, -1)  // remove the empty assistant msg we just added
-        .map(m => ({ role: m.role, content: m.content }));
-
     try {
         const res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ messages: apiMessages }),
+            signal: state.abortController.signal,
         });
 
         if (!res.ok) {
@@ -297,17 +314,32 @@ async function generateResponse(conv) {
         // Update message content
         assistantMsg.content = fullResponse;
 
-        // Final render with proper markdown
-        contentEl.innerHTML = renderMarkdown(fullResponse);
-        attachCodeCopyButtons(contentEl);
+        // Handle empty response
+        if (!fullResponse || !fullResponse.trim()) {
+            assistantMsg.content = "(No response generated — the model returned empty output.)";
+            contentEl.innerHTML = `<p style="color: #a0a0a0; font-style: italic;">No response generated. Try rephrasing your message.</p>`;
+        } else {
+            // Final render with proper markdown
+            contentEl.innerHTML = renderMarkdown(fullResponse);
+            attachCodeCopyButtons(contentEl);
+        }
 
     } catch (err) {
-        console.error("Generation error:", err);
-        assistantMsg.content = `⚠️ Error: ${err.message}`;
-        contentEl.innerHTML = `<p style="color: #ff6b6b;">⚠️ ${escapeHtml(err.message)}</p>`;
-        showToast(err.message, "error");
+        // Handle user-initiated abort gracefully
+        if (err.name === "AbortError") {
+            assistantMsg.content = fullResponse || "(Generation stopped)";
+            contentEl.innerHTML = fullResponse
+                ? renderMarkdown(fullResponse) + `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`
+                : `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`;
+        } else {
+            console.error("Generation error:", err);
+            assistantMsg.content = `⚠️ Error: ${err.message}`;
+            contentEl.innerHTML = `<p style="color: #ff6b6b;">⚠️ ${escapeHtml(err.message)}</p>`;
+            showToast(err.message, "error");
+        }
     } finally {
         state.isGenerating = false;
+        state.abortController = null;
         dom.btnSend.classList.remove("generating");
         dom.btnSend.innerHTML = "➤";
         dom.btnSend.title = "Send message (Enter)";
@@ -613,4 +645,104 @@ function escapeHtml(text) {
     const el = document.createElement("div");
     el.textContent = text;
     return el.innerHTML;
+}
+
+// ── Memory Monitor ───────────────────────────────────────────────────────────
+let memoryPollInterval = null;
+
+function initMemoryMonitor() {
+    // Fetch initial stats
+    fetchSystemStats();
+
+    // Poll every 5 seconds
+    memoryPollInterval = setInterval(fetchSystemStats, 5000);
+
+    // Manual refresh button
+    if (dom.memoryRefresh) {
+        dom.memoryRefresh.addEventListener("click", () => {
+            dom.memoryRefresh.classList.add("spinning");
+            fetchSystemStats();
+            setTimeout(() => dom.memoryRefresh.classList.remove("spinning"), 600);
+        });
+    }
+}
+
+async function fetchSystemStats() {
+    try {
+        const res = await fetch("/api/system/stats");
+        if (!res.ok) return;
+
+        const stats = await res.json();
+        updateMemoryUI(stats);
+    } catch (err) {
+        // Silently fail — don't spam errors for monitoring
+        console.debug("Memory stats fetch failed:", err);
+    }
+}
+
+function updateMemoryUI(stats) {
+    // ── Update RAM section ──
+    if (stats.ram) {
+        const ram = stats.ram;
+        const ramPercent = ram.percent || 0;
+
+        dom.ramMemoryValues.textContent = `${ramPercent}%`;
+        dom.ramMemoryBar.style.width = `${ramPercent}%`;
+        dom.ramMemoryUsed.textContent = `Used: ${ram.used_display}`;
+        dom.ramMemoryFree.textContent = `Free: ${ram.free_display}`;
+
+        // Color coding based on usage
+        dom.ramMemoryBar.classList.remove("warning", "critical");
+        if (ramPercent >= 90) {
+            dom.ramMemoryBar.classList.add("critical");
+        } else if (ramPercent >= 75) {
+            dom.ramMemoryBar.classList.add("warning");
+        }
+    }
+
+    // ── Update GPU section ──
+    if (stats.gpu) {
+        const gpu = stats.gpu;
+        dom.gpuMemorySection.style.display = "block";
+
+        // Set GPU name label
+        dom.gpuMemoryLabel.textContent = gpu.name || "GPU VRAM";
+
+        if (gpu.percent !== null && gpu.percent !== undefined) {
+            // We have actual usage data
+            const gpuPercent = gpu.percent;
+
+            dom.gpuMemoryValues.textContent = `${gpuPercent}%`;
+            dom.gpuMemoryBar.style.width = `${gpuPercent}%`;
+            dom.gpuMemoryUsed.textContent = `Used: ${gpu.used_display}`;
+            dom.gpuMemoryFree.textContent = `Free: ${gpu.free_display}`;
+
+            // Color coding
+            dom.gpuMemoryBar.classList.remove("warning", "critical");
+            if (gpuPercent >= 90) {
+                dom.gpuMemoryBar.classList.add("critical");
+            } else if (gpuPercent >= 75) {
+                dom.gpuMemoryBar.classList.add("warning");
+            }
+        } else {
+            // Shared memory — can't measure exact GPU usage
+            dom.gpuMemoryValues.textContent = gpu.total_display || "—";
+            dom.gpuMemoryBar.style.width = "0%";
+            dom.gpuMemoryUsed.textContent = `Total: ${gpu.total_display}`;
+            dom.gpuMemoryFree.textContent = gpu.max_alloc_display
+                ? `Max alloc: ${gpu.max_alloc_display}`
+                : "";
+        }
+
+        // Show note if available
+        if (gpu.note) {
+            dom.gpuMemoryNote.textContent = gpu.note;
+            dom.gpuMemoryNote.style.display = "block";
+        } else {
+            dom.gpuMemoryNote.style.display = "none";
+        }
+    } else {
+        // No GPU detected — hide GPU section
+        dom.gpuMemorySection.style.display = "none";
+    }
 }
