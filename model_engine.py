@@ -34,6 +34,17 @@ def _is_gpu_oom_error(error: Exception) -> bool:
 class ModelEngine:
     """Manages model loading and text generation for a single OpenVINO model."""
 
+    # Map user-facing device names to OpenVINO device strings
+    _DEVICE_MAP = {
+        "AUTO": "AUTO",
+        "GPU": "GPU",
+        "CPU": "CPU",
+        "CPU+GPU": "HETERO:GPU,CPU",
+    }
+
+    # All user-facing device options
+    AVAILABLE_DEVICES = ["AUTO", "GPU", "CPU", "CPU+GPU"]
+
     def __init__(self):
         self.model_path = os.getenv("MODEL_PATH", "./qwen-0.5b-ov")
         self.device = os.getenv("DEVICE", "AUTO")
@@ -46,7 +57,9 @@ class ModelEngine:
         self.tokenizer = None
         self._lock = threading.Lock()
         self._loaded = False
-        self._active_device = None  # Track which device is actually in use
+        self._active_device = None      # Track which device is actually in use
+        self._requested_device = self.device  # Track what the user requested
+        self._switching = False         # True while a device switch is in progress
 
     @property
     def model_name(self):
@@ -86,7 +99,7 @@ class ModelEngine:
                     self.model = None
                     gc.collect()
                     continue
-                elif device != "CPU" and "GPU" in device.upper():
+                elif device != "CPU" and ("GPU" in device.upper() or "HETERO" in device.upper()):
                     print(f"[ModelEngine] Failed to load on {device}: {e}")
                     print(f"[ModelEngine] Falling back to next device...")
                     self.model = None
@@ -99,17 +112,136 @@ class ModelEngine:
             f"Failed to load model on any device. Tried: {device_order}"
         )
 
+    def _unload(self):
+        """Unload the current model and free resources."""
+        print("[ModelEngine] Unloading model...")
+        self.model = None
+        self._loaded = False
+        self._active_device = None
+        gc.collect()
+        print("[ModelEngine] Model unloaded.")
+
+    def switch_device(self, new_device: str) -> dict:
+        """
+        Switch the model to a different device at runtime.
+
+        Unloads the current model, updates the device setting,
+        and reloads. Falls back to the previous device on failure.
+
+        Args:
+            new_device: One of 'AUTO', 'GPU', 'CPU', 'CPU+GPU'.
+
+        Returns:
+            Dict with keys: success, active_device, requested_device, message.
+        """
+        new_device = new_device.upper().strip()
+        if new_device not in self._DEVICE_MAP and new_device not in ("CPU+GPU",):
+            return {
+                "success": False,
+                "active_device": self._active_device,
+                "requested_device": new_device,
+                "message": f"Unknown device: {new_device}. Valid options: {', '.join(self.AVAILABLE_DEVICES)}",
+            }
+
+        if self._switching:
+            return {
+                "success": False,
+                "active_device": self._active_device,
+                "requested_device": new_device,
+                "message": "A device switch is already in progress. Please wait.",
+            }
+
+        previous_device = self.device
+        previous_active = self._active_device
+
+        self._switching = True
+        try:
+            with self._lock:
+                # Unload current model
+                self._unload()
+
+                # Set the new device
+                self.device = new_device
+                self._requested_device = new_device
+
+                # Attempt to load on the new device
+                try:
+                    self.load()
+                    active = self._active_device
+
+                    # Determine user-friendly label
+                    resolved_label = self._get_friendly_device_name(active)
+                    requested_label = new_device
+
+                    if new_device == "AUTO":
+                        msg = f"Switched to AUTO mode (resolved to {resolved_label})"
+                    elif active != self._DEVICE_MAP.get(new_device, new_device):
+                        # Loaded on a different device than requested (fallback)
+                        msg = f"Failed to switch to {requested_label}, defaulting to {resolved_label}"
+                    else:
+                        msg = f"Switched to {resolved_label}"
+
+                    return {
+                        "success": True,
+                        "active_device": active,
+                        "requested_device": new_device,
+                        "active_device_friendly": resolved_label,
+                        "message": msg,
+                    }
+
+                except Exception as e:
+                    print(f"[ModelEngine] Failed to switch to {new_device}: {e}")
+
+                    # Try to fall back to previous device
+                    self.device = previous_device
+                    self._requested_device = previous_device
+
+                    try:
+                        self.load()
+                        fallback_label = self._get_friendly_device_name(self._active_device)
+                        return {
+                            "success": False,
+                            "active_device": self._active_device,
+                            "requested_device": new_device,
+                            "active_device_friendly": fallback_label,
+                            "message": f"Failed to switch to {new_device}, defaulting to {fallback_label}",
+                        }
+                    except Exception as e2:
+                        print(f"[ModelEngine] CRITICAL: Failed to reload on previous device {previous_device}: {e2}")
+                        return {
+                            "success": False,
+                            "active_device": None,
+                            "requested_device": new_device,
+                            "active_device_friendly": "None",
+                            "message": f"Failed to switch to {new_device} and failed to restore {previous_device}. Model is offline.",
+                        }
+        finally:
+            self._switching = False
+
+    def _get_friendly_device_name(self, ov_device: str) -> str:
+        """Convert an OpenVINO device string to a user-friendly name."""
+        if ov_device is None:
+            return "None"
+        upper = ov_device.upper()
+        if "HETERO" in upper:
+            return "CPU+GPU"
+        return upper
+
     def _get_device_fallback_order(self) -> list[str]:
         """Determine device fallback order based on configured DEVICE."""
-        device = self.device.upper()
+        device = self.device.upper().strip()
         if device == "AUTO":
             return ["GPU", "CPU"]
         elif device == "GPU":
             return ["GPU", "CPU"]
         elif device == "CPU":
             return ["CPU"]
+        elif device == "CPU+GPU":
+            return ["HETERO:GPU,CPU", "GPU", "CPU"]
         else:
-            return [device, "CPU"]
+            # Could be a raw OpenVINO string like HETERO:GPU,CPU
+            ov_device = self._DEVICE_MAP.get(device, device)
+            return [ov_device, "CPU"]
 
     def is_loaded(self):
         """Check if the model is ready for inference."""
@@ -117,10 +249,15 @@ class ModelEngine:
 
     def get_config(self):
         """Return current configuration as a dict (safe for JSON)."""
+        active = self._active_device or self.device
         return {
             "model_name": self.model_name,
             "model_path": self.model_path,
-            "device": self._active_device or self.device,
+            "device": active,
+            "device_friendly": self._get_friendly_device_name(active),
+            "requested_device": self._requested_device,
+            "available_devices": self.AVAILABLE_DEVICES,
+            "switching": self._switching,
             "max_new_tokens": self.max_new_tokens,
             "max_history": self.max_history,
             "max_input_tokens": self.max_input_tokens,
