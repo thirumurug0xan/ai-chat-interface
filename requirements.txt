@@ -1,0 +1,4 @@
+flask>=3.0
+python-dotenv>=1.0
+optimum[openvino]>=1.18
+transformers>=4.40
