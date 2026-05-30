@@ -61,6 +61,46 @@ def system_stats():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/device/switch", methods=["POST"])
+def device_switch():
+    """
+    Switch the inference device at runtime.
+
+    Expects JSON body:
+        { "device": "GPU" | "CPU" | "AUTO" | "CPU+GPU" }
+
+    Returns:
+        { "success": bool, "active_device": str, "requested_device": str,
+          "active_device_friendly": str, "message": str }
+    """
+    data = request.get_json()
+    if not data or "device" not in data:
+        return jsonify({"error": "Missing 'device' in request body"}), 400
+
+    requested = data["device"].strip().upper()
+
+    # Don't allow switching while generating
+    if engine._lock.locked():
+        return jsonify({
+            "success": False,
+            "active_device": engine._active_device,
+            "requested_device": requested,
+            "message": "Cannot switch device while generation is in progress. Please wait.",
+        }), 409
+
+    try:
+        result = engine.switch_device(requested)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "active_device": engine._active_device,
+            "requested_device": requested,
+            "message": f"Device switch failed: {str(e)}",
+        }), 500
+
+
 @app.route("/api/context/count", methods=["POST"])
 def context_count():
     """

@@ -24,33 +24,36 @@ def _is_wsl2() -> bool:
 
 def get_system_stats(active_device: str | None = None) -> dict:
     """
-    Collect GPU VRAM and system RAM statistics.
+    Collect GPU VRAM, CPU utilization, and system RAM statistics.
 
     Args:
         active_device: The device the model is running on (e.g., "GPU", "CPU").
 
     Returns:
-        dict with 'gpu' (optional) and 'ram' memory stats.
+        dict with 'gpu' (optional), 'ram', and 'cpu' stats.
     """
     wsl2 = _is_wsl2()
 
+    # CPU utilization (non-blocking, uses cached value from last interval)
+    cpu_percent = psutil.cpu_percent(interval=None)
+    cpu_count = psutil.cpu_count(logical=True)
+
     stats = {
         "ram": _get_ram_stats(wsl2=wsl2),
+        "cpu": {
+            "percent": cpu_percent,
+            "cores": cpu_count,
+        },
         "gpu": None,
         "wsl2": wsl2,
     }
 
-    # In WSL2, GPU detection via sysfs/nvidia-smi is unreliable;
-    # skip GPU probing entirely to avoid misleading stats.
-    if wsl2:
-        return stats
-
-    # Try to detect GPU memory if we're on a GPU device
+    # Try to detect GPU stats
     device = (active_device or "").upper()
-    if device in ("GPU", "AUTO"):
+    if device in ("GPU", "AUTO") or "HETERO" in device:
         # Try NVIDIA first, then Intel
         gpu_stats = _get_nvidia_gpu_stats()
-        if not gpu_stats:
+        if not gpu_stats and not wsl2:
             gpu_stats = _get_intel_gpu_stats()
         stats["gpu"] = gpu_stats
 

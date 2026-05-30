@@ -37,7 +37,6 @@ const dom = {
     statusDot: $("#status-dot"),
     statusText: $("#status-text"),
     modelName: $("#model-name"),
-    modelDevice: $("#model-device"),
     deviceBadge: $("#device-badge"),
     modelStatus: $("#model-status"),
     maxTokensSlider: $("#max-tokens-slider"),
@@ -60,10 +59,41 @@ const dom = {
     ramMemoryUsed: $("#ram-memory-used"),
     ramMemoryFree: $("#ram-memory-free"),
     ramMemoryNote: $("#ram-memory-note"),
+    // Utilization graphs
+    cpuGraphCanvas: $("#cpu-graph-canvas"),
+    gpuGraphCanvas: $("#gpu-graph-canvas"),
+    ramGraphCanvas: $("#ram-graph-canvas"),
+    cpuUtilValue: $("#cpu-util-value"),
+    gpuUtilValue: $("#gpu-util-value"),
+    ramUtilValue: $("#ram-util-value"),
+    gpuGraphSection: $("#gpu-graph-section"),
     // Context window
     contextWindow: $("#context-window"),
     contextBarFill: $("#context-bar-fill"),
     contextLabel: $("#context-label"),
+    // Context popup
+    contextPopup: $("#context-popup"),
+    contextPopupClose: $("#context-popup-close"),
+    gaugePercent: $("#gauge-percent"),
+    gaugeFill: $("#gauge-fill"),
+    ctxTokensUsed: $("#ctx-tokens-used"),
+    ctxTokensMax: $("#ctx-tokens-max"),
+    ctxTokensRemaining: $("#ctx-tokens-remaining"),
+    ctxMessageCount: $("#ctx-message-count"),
+    contextHealth: $("#context-health"),
+    contextMsgBreakdown: $("#context-msg-breakdown"),
+    contextBreakdownList: $("#context-breakdown-list"),
+    // Help modal
+    btnHelp: $("#btn-help"),
+    helpModalOverlay: $("#help-modal-overlay"),
+    helpModalClose: $("#help-modal-close"),
+    // Device selector
+    deviceSelector: $("#device-selector"),
+    deviceSelectorBtn: $("#device-selector-btn"),
+    deviceDropdown: $("#device-dropdown"),
+    autoResolvedLabel: $("#auto-resolved-label"),
+    deviceSwitchingOverlay: $("#device-switching-overlay"),
+    deviceSwitchingText: $("#device-switching-text"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -74,6 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderConversationList();
     renderActiveConversation();
     initMemoryMonitor();
+    initSVGGradient();
 });
 
 // ── Event Listeners ──────────────────────────────────────────────────────────
@@ -138,6 +169,83 @@ function initEventListeners() {
             e.preventDefault();
             createNewConversation();
         }
+
+        // Esc — close popups and modals
+        if (e.key === "Escape") {
+            closeContextPopup();
+            closeHelpModal();
+            closeDeviceDropdown();
+        }
+
+        // ? — open help (only when not typing in input)
+        if (e.key === "?" && document.activeElement !== dom.chatInput) {
+            e.preventDefault();
+            openHelpModal();
+        }
+    });
+
+    // Context window click
+    if (dom.contextWindow) {
+        dom.contextWindow.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleContextPopup();
+        });
+    }
+
+    // Context popup close
+    if (dom.contextPopupClose) {
+        dom.contextPopupClose.addEventListener("click", closeContextPopup);
+    }
+
+    // Help button
+    if (dom.btnHelp) {
+        dom.btnHelp.addEventListener("click", openHelpModal);
+    }
+
+    // Help modal close
+    if (dom.helpModalClose) {
+        dom.helpModalClose.addEventListener("click", closeHelpModal);
+    }
+
+    if (dom.helpModalOverlay) {
+        dom.helpModalOverlay.addEventListener("click", (e) => {
+            if (e.target === dom.helpModalOverlay) closeHelpModal();
+        });
+    }
+
+    // Close context popup on outside click
+    document.addEventListener("click", (e) => {
+        if (dom.contextPopup && dom.contextPopup.classList.contains("visible")) {
+            if (!dom.contextPopup.contains(e.target) && !dom.contextWindow.contains(e.target)) {
+                closeContextPopup();
+            }
+        }
+        // Close device dropdown on outside click
+        if (dom.deviceDropdown && dom.deviceDropdown.classList.contains("visible")) {
+            if (!dom.deviceSelector.contains(e.target)) {
+                closeDeviceDropdown();
+            }
+        }
+    });
+
+    // Device selector
+    if (dom.deviceSelectorBtn) {
+        dom.deviceSelectorBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleDeviceDropdown();
+        });
+    }
+
+    // Device option clicks
+    $$(".device-option").forEach((opt) => {
+        opt.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const device = opt.dataset.device;
+            if (device) {
+                closeDeviceDropdown();
+                switchDevice(device);
+            }
+        });
     });
 }
 
@@ -149,8 +257,14 @@ async function fetchConfig() {
         state.modelConfig = data;
 
         dom.modelName.textContent = data.model_name || "Unknown";
-        dom.deviceBadge.textContent = data.device || "—";
-        dom.deviceBadge.className = `device-badge ${(data.device || "").toLowerCase()}`;
+
+        // Update device badge with friendly name
+        const friendlyDevice = data.device_friendly || data.device || "—";
+        const requestedDevice = (data.requested_device || "").toUpperCase();
+        updateDeviceBadge(friendlyDevice, requestedDevice);
+
+        // Update device selector active state
+        updateDeviceSelectorUI(requestedDevice, friendlyDevice);
 
         if (data.loaded) {
             setStatus("ready", "Ready");
@@ -734,6 +848,106 @@ function escapeHtml(text) {
 // ── Memory Monitor ───────────────────────────────────────────────────────────
 let memoryPollInterval = null;
 
+// Graph history buffers (60 points = 5 min at 5s intervals)
+const GRAPH_MAX_POINTS = 60;
+const cpuHistory = [];
+const gpuHistory = [];
+const ramHistory = [];
+
+function pushGraphData(history, value) {
+    history.push(value);
+    if (history.length > GRAPH_MAX_POINTS) {
+        history.shift();
+    }
+}
+
+function drawGraph(canvas, data, lineColor, fillColor) {
+    if (!canvas || data.length < 2) return;
+
+    const ctx = canvas.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    // Set canvas resolution for crisp rendering
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw subtle grid lines
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+        const y = (h / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+    }
+
+    // Compute points
+    const padding = 2;
+    const graphW = w - padding * 2;
+    const graphH = h - padding * 2;
+    const step = graphW / (GRAPH_MAX_POINTS - 1);
+    const offset = GRAPH_MAX_POINTS - data.length;
+
+    const points = data.map((val, i) => ({
+        x: padding + (offset + i) * step,
+        y: padding + graphH - (val / 100) * graphH,
+    }));
+
+    // Draw filled area
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, h);
+    ctx.lineTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1];
+        const curr = points[i];
+        const cpx = (prev.x + curr.x) / 2;
+        ctx.bezierCurveTo(cpx, prev.y, cpx, curr.y, curr.x, curr.y);
+    }
+    ctx.lineTo(points[points.length - 1].x, h);
+    ctx.closePath();
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, h);
+    gradient.addColorStop(0, fillColor);
+    gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Draw line
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1];
+        const curr = points[i];
+        const cpx = (prev.x + curr.x) / 2;
+        ctx.bezierCurveTo(cpx, prev.y, cpx, curr.y, curr.x, curr.y);
+    }
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Draw current value dot
+    const last = points[points.length - 1];
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = lineColor;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+}
+
 function initMemoryMonitor() {
     // Fetch initial stats
     fetchSystemStats();
@@ -795,6 +1009,11 @@ function updateMemoryUI(stats) {
         } else if (ramPercent >= 75) {
             dom.ramMemoryBar.classList.add("warning");
         }
+
+        // Push to graph history
+        pushGraphData(ramHistory, ramPercent);
+        if (dom.ramUtilValue) dom.ramUtilValue.textContent = `${Math.round(ramPercent)}%`;
+        drawGraph(dom.ramGraphCanvas, ramHistory, "#6c5ce7", "rgba(108, 92, 231, 0.15)");
     }
 
     // ── Update GPU section ──
@@ -841,6 +1060,25 @@ function updateMemoryUI(stats) {
     } else {
         // No GPU detected — hide GPU section
         dom.gpuMemorySection.style.display = "none";
+    }
+
+    // ── Update CPU graph ──
+    if (stats.cpu) {
+        const cpuPct = stats.cpu.percent || 0;
+        pushGraphData(cpuHistory, cpuPct);
+        if (dom.cpuUtilValue) dom.cpuUtilValue.textContent = `${Math.round(cpuPct)}%`;
+        drawGraph(dom.cpuGraphCanvas, cpuHistory, "#ffa502", "rgba(255, 165, 2, 0.12)");
+    }
+
+    // ── Update GPU graph ──
+    if (stats.gpu && stats.gpu.percent !== null && stats.gpu.percent !== undefined) {
+        const gpuPct = stats.gpu.percent;
+        pushGraphData(gpuHistory, gpuPct);
+        if (dom.gpuUtilValue) dom.gpuUtilValue.textContent = `${Math.round(gpuPct)}%`;
+        drawGraph(dom.gpuGraphCanvas, gpuHistory, "#00cec9", "rgba(0, 206, 201, 0.12)");
+        if (dom.gpuGraphSection) dom.gpuGraphSection.style.display = "block";
+    } else {
+        if (dom.gpuGraphSection) dom.gpuGraphSection.style.display = "none";
     }
 }
 
@@ -907,6 +1145,7 @@ async function fetchContextUsage(conv) {
 
 function updateContextWindowUI(used, max) {
     const pct = max > 0 ? Math.min((used / max) * 100, 100) : 0;
+    const roundedPct = Math.round(pct);
 
     if (dom.contextBarFill) {
         dom.contextBarFill.style.width = `${pct}%`;
@@ -925,6 +1164,291 @@ function updateContextWindowUI(used, max) {
     }
 
     if (dom.contextWindow) {
-        dom.contextWindow.title = `Context window: ${used} of ${max} tokens used (${Math.round(pct)}%)`;
+        dom.contextWindow.title = `Context window: ${used} of ${max} tokens used (${roundedPct}%) — Click for details`;
     }
+
+    // ── Update popup details ──
+    if (dom.gaugePercent) {
+        dom.gaugePercent.textContent = `${roundedPct}%`;
+    }
+
+    // Animate SVG gauge
+    if (dom.gaugeFill) {
+        const circumference = 2 * Math.PI * 52; // ~326.7
+        const offset = circumference - (pct / 100) * circumference;
+        dom.gaugeFill.style.strokeDashoffset = offset;
+
+        dom.gaugeFill.classList.remove("warning", "critical");
+        if (pct >= 90) {
+            dom.gaugeFill.classList.add("critical");
+        } else if (pct >= 75) {
+            dom.gaugeFill.classList.add("warning");
+        }
+    }
+
+    // Stats cards
+    if (dom.ctxTokensUsed) dom.ctxTokensUsed.textContent = used.toLocaleString();
+    if (dom.ctxTokensMax) dom.ctxTokensMax.textContent = max.toLocaleString();
+    if (dom.ctxTokensRemaining) dom.ctxTokensRemaining.textContent = Math.max(0, max - used).toLocaleString();
+
+    // Message count
+    const conv = getActiveConversation();
+    const msgCount = conv ? conv.messages.filter(m => m.content && m.content.trim()).length : 0;
+    if (dom.ctxMessageCount) dom.ctxMessageCount.textContent = msgCount;
+
+    // Health indicator
+    if (dom.contextHealth) {
+        dom.contextHealth.classList.remove("warning", "critical");
+        const healthLabel = dom.contextHealth.querySelector(".context-health-label");
+
+        if (pct >= 90) {
+            dom.contextHealth.classList.add("critical");
+            if (healthLabel) healthLabel.textContent = "Critical — Responses may be truncated";
+        } else if (pct >= 75) {
+            dom.contextHealth.classList.add("warning");
+            if (healthLabel) healthLabel.textContent = "Warning — Consider starting a new chat";
+        } else {
+            if (healthLabel) healthLabel.textContent = "Healthy — Plenty of room";
+        }
+    }
+
+    // Message breakdown
+    if (dom.contextBreakdownList && conv && conv.messages.length > 0) {
+        dom.contextMsgBreakdown.classList.add("visible");
+        dom.contextBreakdownList.innerHTML = "";
+
+        conv.messages
+            .filter(m => m.content && m.content.trim())
+            .forEach((m, i) => {
+                const emoji = m.role === "user" ? "👤" : "🧠";
+                const preview = m.content.slice(0, 60) + (m.content.length > 60 ? "..." : "");
+                // Rough token estimate: ~4 chars per token
+                const estTokens = Math.ceil(m.content.length / 4);
+
+                const item = document.createElement("div");
+                item.className = "context-breakdown-item";
+                item.innerHTML = `
+                    <span class="context-breakdown-role">${emoji}</span>
+                    <span class="context-breakdown-text">${escapeHtml(preview)}</span>
+                    <span class="context-breakdown-tokens">~${estTokens} tok</span>
+                `;
+                dom.contextBreakdownList.appendChild(item);
+            });
+    } else if (dom.contextMsgBreakdown) {
+        dom.contextMsgBreakdown.classList.remove("visible");
+    }
+}
+
+// ── Context Popup ─────────────────────────────────────────────────────────
+function toggleContextPopup() {
+    if (dom.contextPopup.classList.contains("visible")) {
+        closeContextPopup();
+    } else {
+        openContextPopup();
+    }
+}
+
+function openContextPopup() {
+    dom.contextPopup.classList.add("visible");
+    dom.contextWindow.classList.add("active");
+}
+
+function closeContextPopup() {
+    dom.contextPopup.classList.remove("visible");
+    dom.contextWindow.classList.remove("active");
+}
+
+// ── Help Modal ────────────────────────────────────────────────────────────
+function openHelpModal() {
+    dom.helpModalOverlay.classList.add("visible");
+}
+
+function closeHelpModal() {
+    dom.helpModalOverlay.classList.remove("visible");
+}
+
+// ── SVG Gradient for Gauge ───────────────────────────────────────────────
+function initSVGGradient() {
+    const svg = document.querySelector(".gauge-svg");
+    if (!svg) return;
+
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+    gradient.setAttribute("id", "gauge-gradient");
+    gradient.setAttribute("x1", "0%");
+    gradient.setAttribute("y1", "0%");
+    gradient.setAttribute("x2", "100%");
+    gradient.setAttribute("y2", "0%");
+
+    const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+    stop1.setAttribute("offset", "0%");
+    stop1.setAttribute("stop-color", "#6c5ce7");
+
+    const stop2 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+    stop2.setAttribute("offset", "100%");
+    stop2.setAttribute("stop-color", "#00cec9");
+
+    gradient.appendChild(stop1);
+    gradient.appendChild(stop2);
+    defs.appendChild(gradient);
+    svg.insertBefore(defs, svg.firstChild);
+}
+
+// ── Device Switching ─────────────────────────────────────────────────────
+async function switchDevice(device) {
+    if (state.isGenerating) {
+        showToast("Cannot switch device while generating. Please wait.", "error");
+        return;
+    }
+
+    const currentRequested = (state.modelConfig?.requested_device || "").toUpperCase();
+    if (device.toUpperCase() === currentRequested) {
+        showToast(`Already using ${device}`, "info");
+        return;
+    }
+
+    // Show switching overlay
+    if (dom.deviceSwitchingOverlay) {
+        dom.deviceSwitchingText.textContent = `Switching to ${device}...`;
+        dom.deviceSwitchingOverlay.classList.add("visible");
+    }
+
+    // Update badge to switching state
+    dom.deviceBadge.textContent = device;
+    dom.deviceBadge.className = "device-badge switching";
+
+    // Disable send button during switch
+    dom.btnSend.disabled = true;
+    setStatus("loading", "Switching device...");
+    dom.modelStatus.textContent = "Switching...";
+
+    try {
+        const res = await fetch("/api/device/switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ device: device }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            // Successful switch
+            const friendly = data.active_device_friendly || data.active_device || device;
+            updateDeviceBadge(friendly, data.requested_device || device);
+            updateDeviceSelectorUI(data.requested_device || device, friendly);
+
+            setStatus("ready", "Ready");
+            dom.modelStatus.textContent = "Loaded";
+            showToast(data.message || `Switched to ${friendly}`, "success");
+
+            // Refresh full config
+            await fetchConfig();
+        } else {
+            // Failed — show fallback info
+            const fallbackFriendly = data.active_device_friendly || data.active_device || "Unknown";
+            updateDeviceBadge(fallbackFriendly, data.requested_device || currentRequested);
+            updateDeviceSelectorUI(
+                state.modelConfig?.requested_device || currentRequested,
+                fallbackFriendly
+            );
+
+            if (data.active_device) {
+                setStatus("ready", "Ready");
+                dom.modelStatus.textContent = "Loaded";
+            } else {
+                setStatus("error", "Model offline");
+                dom.modelStatus.textContent = "Error";
+            }
+
+            showToast(data.message || `Failed to switch to ${device}`, "error");
+
+            // Refresh config to get accurate state
+            await fetchConfig();
+        }
+    } catch (err) {
+        console.error("Device switch error:", err);
+        showToast(`Failed to switch to ${device}: ${err.message}`, "error");
+
+        // Restore previous state
+        setStatus("error", "Error");
+        dom.modelStatus.textContent = "Error";
+        await fetchConfig();
+    } finally {
+        // Hide switching overlay
+        if (dom.deviceSwitchingOverlay) {
+            dom.deviceSwitchingOverlay.classList.remove("visible");
+        }
+        // Re-enable send button
+        dom.btnSend.disabled = false;
+    }
+}
+
+function updateDeviceBadge(friendlyDevice, requestedDevice) {
+    if (!dom.deviceBadge) return;
+
+    const requested = (requestedDevice || "").toUpperCase();
+    const friendly = (friendlyDevice || "").toUpperCase();
+
+    // Determine badge CSS class
+    let badgeClass = "device-badge ";
+    if (friendly.includes("HETERO") || friendly === "CPU+GPU") {
+        badgeClass += "hetero";
+    } else if (friendly === "GPU") {
+        badgeClass += "gpu";
+    } else if (friendly === "CPU") {
+        badgeClass += "cpu";
+    } else {
+        badgeClass += friendly.toLowerCase();
+    }
+    dom.deviceBadge.className = badgeClass;
+
+    // Determine badge text
+    if (requested === "AUTO") {
+        dom.deviceBadge.textContent = `AUTO (${friendly})`;
+    } else {
+        dom.deviceBadge.textContent = friendly;
+    }
+}
+
+function updateDeviceSelectorUI(requestedDevice, activeFriendly) {
+    const requested = (requestedDevice || "").toUpperCase();
+    const friendly = (activeFriendly || "").toUpperCase();
+
+    // Update active state on options
+    $$(".device-option").forEach((opt) => {
+        const optDevice = (opt.dataset.device || "").toUpperCase();
+        if (optDevice === requested) {
+            opt.classList.add("active");
+        } else {
+            opt.classList.remove("active");
+        }
+    });
+
+    // Update AUTO resolved label
+    if (dom.autoResolvedLabel) {
+        if (requested === "AUTO") {
+            dom.autoResolvedLabel.textContent = `Using ${friendly}`;
+        } else {
+            dom.autoResolvedLabel.textContent = "Best available";
+        }
+    }
+}
+
+// ── Device Dropdown ──────────────────────────────────────────────────────
+function toggleDeviceDropdown() {
+    if (dom.deviceDropdown.classList.contains("visible")) {
+        closeDeviceDropdown();
+    } else {
+        openDeviceDropdown();
+    }
+}
+
+function openDeviceDropdown() {
+    dom.deviceDropdown.classList.add("visible");
+    dom.deviceSelector.classList.add("open");
+}
+
+function closeDeviceDropdown() {
+    dom.deviceDropdown.classList.remove("visible");
+    dom.deviceSelector.classList.remove("open");
 }
