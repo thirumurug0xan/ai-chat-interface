@@ -426,6 +426,11 @@ body {
     overflow: hidden;
 }
 
+/* Allow dropdown overflow when open so it is not clipped by parent container */
+.model-info:has(.device-selector.open) {
+    overflow: visible !important;
+}
+
 .model-info-row {
     display: flex;
     justify-content: space-between;
