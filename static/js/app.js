@@ -12,7 +12,7 @@ const state = {
     isGenerating: false,
     abortController: null,
     modelConfig: null,
-    maxTokens: 512,
+    maxTokens: 2048,
     maxInputTokens: 1024,       // context window size from config
 };
 
@@ -94,6 +94,8 @@ const dom = {
     autoResolvedLabel: $("#auto-resolved-label"),
     deviceSwitchingOverlay: $("#device-switching-overlay"),
     deviceSwitchingText: $("#device-switching-text"),
+    // Export
+    btnExport: $("#btn-export"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -105,6 +107,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderActiveConversation();
     initMemoryMonitor();
     initSVGGradient();
+    initPanelToggles();
 });
 
 // ── Event Listeners ──────────────────────────────────────────────────────────
@@ -247,6 +250,11 @@ function initEventListeners() {
             }
         });
     });
+
+    // Export button
+    if (dom.btnExport) {
+        dom.btnExport.addEventListener("click", handleExport);
+    }
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -384,7 +392,7 @@ async function generateResponse(conv) {
         const res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: apiMessages }),
+            body: JSON.stringify({ messages: apiMessages, max_tokens: state.maxTokens }),
             signal: state.abortController.signal,
         });
 
@@ -825,7 +833,7 @@ function loadState() {
             const data = JSON.parse(saved);
             state.conversations = data.conversations || [];
             state.activeConversationId = data.activeConversationId || null;
-            state.maxTokens = data.maxTokens || 512;
+            state.maxTokens = data.maxTokens || 2048;
             dom.maxTokensSlider.value = state.maxTokens;
             dom.maxTokensDisplay.textContent = state.maxTokens;
         }
@@ -1451,4 +1459,84 @@ function openDeviceDropdown() {
 function closeDeviceDropdown() {
     dom.deviceDropdown.classList.remove("visible");
     dom.deviceSelector.classList.remove("open");
+}
+
+// ── Collapsible Panel Toggles ────────────────────────────────────────────
+function initPanelToggles() {
+    // Restore saved panel states
+    const savedPanelState = JSON.parse(localStorage.getItem("ai-chat-panels") || "{}");
+
+    $$(".sidebar-panel-toggle").forEach((toggleBtn) => {
+        const panelId = toggleBtn.dataset.panel;
+        const panelBody = document.getElementById(panelId);
+        if (!panelBody) return;
+
+        // Restore saved state (default: collapsed)
+        const isOpen = savedPanelState[panelId] === true;
+        if (isOpen) {
+            panelBody.classList.remove("collapsed");
+            toggleBtn.classList.add("open");
+        } else {
+            panelBody.classList.add("collapsed");
+            toggleBtn.classList.remove("open");
+        }
+
+        toggleBtn.addEventListener("click", () => {
+            const isNowCollapsed = !panelBody.classList.contains("collapsed");
+            panelBody.classList.toggle("collapsed", isNowCollapsed);
+            toggleBtn.classList.toggle("open", !isNowCollapsed);
+
+            // Save state
+            const state = JSON.parse(localStorage.getItem("ai-chat-panels") || "{}");
+            state[panelId] = !isNowCollapsed;
+            localStorage.setItem("ai-chat-panels", JSON.stringify(state));
+        });
+    });
+}
+
+// ── Export Conversation ──────────────────────────────────────────────────
+function handleExport() {
+    const conv = getActiveConversation();
+    if (!conv || conv.messages.length === 0) {
+        showToast("No conversation to export.", "error");
+        return;
+    }
+
+    // Build export data
+    const exportData = {
+        id: conv.id,
+        title: conv.title,
+        createdAt: conv.createdAt ? new Date(conv.createdAt).toISOString() : null,
+        exportedAt: new Date().toISOString(),
+        model: state.modelConfig?.model_name || "Unknown",
+        device: state.modelConfig?.device_friendly || state.modelConfig?.device || "Unknown",
+        messageCount: conv.messages.length,
+        messages: conv.messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).toISOString() : null,
+            ...(msg.meta ? { meta: msg.meta } : {}),
+        })),
+    };
+
+    // Create and download the JSON file
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    // Sanitize title for filename
+    const safeTitle = conv.title
+        .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+        .replace(/\s+/g, "_")
+        .slice(0, 40)
+        || "conversation";
+    a.href = url;
+    a.download = `${safeTitle}_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast("Conversation exported!", "success");
 }

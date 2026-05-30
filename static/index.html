@@ -29,7 +29,8 @@
             </div>
 
             <div class="sidebar-content">
-                <div class="sidebar-section">
+                <!-- Conversations section — gets most of the space -->
+                <div class="sidebar-section sidebar-section-conversations">
                     <div class="sidebar-section-title">Conversations</div>
                     <ul class="conversation-list" id="conversation-list">
                         <!-- Populated dynamically -->
@@ -39,178 +40,202 @@
                         <div>No conversations yet</div>
                     </div>
                 </div>
-            </div>
 
-            <div class="sidebar-footer">
-                <div class="model-info" id="model-info">
-                    <div class="model-info-row">
-                        <span class="label">Model</span>
-                        <span class="value" id="model-name">Loading...</span>
-                    </div>
-                    <div class="model-info-row device-selector-row">
-                        <span class="label">Device</span>
-                        <div class="device-selector" id="device-selector">
-                            <button class="device-selector-btn" id="device-selector-btn" title="Click to change device">
-                                <span class="device-badge gpu" id="device-badge">—</span>
-                                <span class="device-selector-arrow">▾</span>
-                            </button>
-                            <div class="device-dropdown" id="device-dropdown">
-                                <div class="device-dropdown-header">Switch Hardware</div>
-                                <button class="device-option" data-device="AUTO" id="device-opt-auto">
-                                    <span class="device-option-icon">🔄</span>
-                                    <div class="device-option-info">
-                                        <span class="device-option-name">AUTO</span>
-                                        <span class="device-option-desc" id="auto-resolved-label">Best available</span>
+                <!-- ── Collapsible Panels ── -->
+
+                <!-- Model & Device Panel -->
+                <div class="sidebar-panel">
+                    <button class="sidebar-panel-toggle" data-panel="model-panel" id="toggle-model-panel">
+                        <span class="sidebar-panel-toggle-icon">⚙️</span>
+                        <span class="sidebar-panel-toggle-title">Model & Device</span>
+                        <span class="sidebar-panel-arrow">▾</span>
+                    </button>
+                    <div class="sidebar-panel-body collapsed" id="model-panel">
+                        <div class="model-info" id="model-info">
+                            <div class="model-info-row">
+                                <span class="label">Model</span>
+                                <span class="value" id="model-name">Loading...</span>
+                            </div>
+                            <div class="model-info-row device-selector-row">
+                                <span class="label">Device</span>
+                                <div class="device-selector" id="device-selector">
+                                    <button class="device-selector-btn" id="device-selector-btn" title="Click to change device">
+                                        <span class="device-badge gpu" id="device-badge">—</span>
+                                        <span class="device-selector-arrow">▾</span>
+                                    </button>
+                                    <div class="device-dropdown" id="device-dropdown">
+                                        <div class="device-dropdown-header">Switch Hardware</div>
+                                        <button class="device-option" data-device="AUTO" id="device-opt-auto">
+                                            <span class="device-option-icon">🔄</span>
+                                            <div class="device-option-info">
+                                                <span class="device-option-name">AUTO</span>
+                                                <span class="device-option-desc" id="auto-resolved-label">Best available</span>
+                                            </div>
+                                            <span class="device-option-check" id="check-auto">✓</span>
+                                        </button>
+                                        <button class="device-option" data-device="GPU" id="device-opt-gpu">
+                                            <span class="device-option-icon">🎮</span>
+                                            <div class="device-option-info">
+                                                <span class="device-option-name">GPU</span>
+                                                <span class="device-option-desc">Intel integrated / discrete</span>
+                                            </div>
+                                            <span class="device-option-check" id="check-gpu">✓</span>
+                                        </button>
+                                        <button class="device-option" data-device="CPU" id="device-opt-cpu">
+                                            <span class="device-option-icon">💻</span>
+                                            <div class="device-option-info">
+                                                <span class="device-option-name">CPU</span>
+                                                <span class="device-option-desc">Universal compatibility</span>
+                                            </div>
+                                            <span class="device-option-check" id="check-cpu">✓</span>
+                                        </button>
+                                        <!-- CPU+GPU option temporarily disabled — not working as expected -->
+                                        <button class="device-option" data-device="CPU+GPU" id="device-opt-hetero" style="display: none;">
+                                            <span class="device-option-icon">⚡</span>
+                                            <div class="device-option-info">
+                                                <span class="device-option-name">CPU+GPU</span>
+                                                <span class="device-option-desc">Heterogeneous split</span>
+                                            </div>
+                                            <span class="device-option-check" id="check-hetero">✓</span>
+                                        </button>
                                     </div>
-                                    <span class="device-option-check" id="check-auto">✓</span>
-                                </button>
-                                <button class="device-option" data-device="GPU" id="device-opt-gpu">
-                                    <span class="device-option-icon">🎮</span>
-                                    <div class="device-option-info">
-                                        <span class="device-option-name">GPU</span>
-                                        <span class="device-option-desc">Intel integrated / discrete</span>
-                                    </div>
-                                    <span class="device-option-check" id="check-gpu">✓</span>
-                                </button>
-                                <button class="device-option" data-device="CPU" id="device-opt-cpu">
-                                    <span class="device-option-icon">💻</span>
-                                    <div class="device-option-info">
-                                        <span class="device-option-name">CPU</span>
-                                        <span class="device-option-desc">Universal compatibility</span>
-                                    </div>
-                                    <span class="device-option-check" id="check-cpu">✓</span>
-                                </button>
-                                <button class="device-option" data-device="CPU+GPU" id="device-opt-hetero">
-                                    <span class="device-option-icon">⚡</span>
-                                    <div class="device-option-info">
-                                        <span class="device-option-name">CPU+GPU</span>
-                                        <span class="device-option-desc">Heterogeneous split</span>
-                                    </div>
-                                    <span class="device-option-check" id="check-hetero">✓</span>
-                                </button>
+                                </div>
+                            </div>
+                            <!-- Device switching overlay -->
+                            <div class="device-switching-overlay" id="device-switching-overlay">
+                                <div class="device-switching-spinner"></div>
+                                <span class="device-switching-text" id="device-switching-text">Switching...</span>
+                            </div>
+                            <div class="model-info-row">
+                                <span class="label">Status</span>
+                                <span class="value" id="model-status">Connecting...</span>
                             </div>
                         </div>
-                    </div>
-                    <!-- Device switching overlay -->
-                    <div class="device-switching-overlay" id="device-switching-overlay">
-                        <div class="device-switching-spinner"></div>
-                        <span class="device-switching-text" id="device-switching-text">Switching...</span>
-                    </div>
-                    <div class="model-info-row">
-                        <span class="label">Status</span>
-                        <span class="value" id="model-status">Connecting...</span>
+                        <div class="setting-group">
+                            <div class="setting-label">
+                                <span>Max Tokens</span>
+                                <span class="setting-value" id="max-tokens-display">2048</span>
+                            </div>
+                            <input
+                                type="range"
+                                class="setting-slider"
+                                id="max-tokens-slider"
+                                min="64"
+                                max="4096"
+                                value="2048"
+                                step="64"
+                            >
+                        </div>
                     </div>
                 </div>
 
-                <!-- Memory Monitor Widget -->
-                <div class="memory-monitor" id="memory-monitor">
-                    <div class="memory-monitor-header">
-                        <span class="memory-monitor-title">📊 Memory</span>
-                        <span class="memory-monitor-refresh" id="memory-refresh" title="Refresh stats">↻</span>
-                    </div>
-
-                    <!-- GPU VRAM Section -->
-                    <div class="memory-section gpu-memory" id="gpu-memory-section" style="display: none;">
-                        <div class="memory-section-label">
-                            <span class="memory-label-text">
-                                <span class="memory-dot gpu-dot"></span>
-                                <span id="gpu-memory-label">GPU VRAM</span>
-                            </span>
-                            <span class="memory-values" id="gpu-memory-values">—</span>
-                        </div>
-                        <div class="memory-bar-track">
-                            <div class="memory-bar-fill gpu-fill" id="gpu-memory-bar" style="width: 0%"></div>
-                        </div>
-                        <div class="memory-details">
-                            <span id="gpu-memory-used">—</span>
-                            <span id="gpu-memory-free">Free: —</span>
-                        </div>
-                        <div class="memory-note" id="gpu-memory-note" style="display: none;"></div>
-                    </div>
-
-                    <!-- System RAM Section -->
-                    <div class="memory-section ram-memory" id="ram-memory-section">
-                        <div class="memory-section-label">
-                            <span class="memory-label-text">
-                                <span class="memory-dot ram-dot"></span>
-                                <span id="ram-memory-label">System RAM</span>
-                            </span>
-                            <span class="memory-values" id="ram-memory-values">—</span>
-                        </div>
-                        <div class="memory-bar-track">
-                            <div class="memory-bar-fill ram-fill" id="ram-memory-bar" style="width: 0%"></div>
-                        </div>
-                        <div class="memory-details">
-                            <span id="ram-memory-used">—</span>
-                            <span id="ram-memory-free">Free: —</span>
-                        </div>
-                        <div class="memory-note" id="ram-memory-note" style="display: none;"></div>
-                    </div>
-
-                    <!-- Utilization Graphs -->
-                    <div class="util-graphs" id="util-graphs">
-                        <div class="util-graphs-header">
-                            <span class="util-graphs-title">📈 Utilization</span>
-                        </div>
-
-                        <!-- CPU Graph -->
-                        <div class="util-graph-item">
-                            <div class="util-graph-label">
-                                <span class="util-graph-name">
-                                    <span class="memory-dot" style="background: #ffa502; box-shadow: 0 0 6px rgba(255,165,2,0.5);"></span>
-                                    CPU
-                                </span>
-                                <span class="util-graph-value" id="cpu-util-value">0%</span>
+                <!-- Memory Panel -->
+                <div class="sidebar-panel">
+                    <button class="sidebar-panel-toggle" data-panel="memory-panel" id="toggle-memory-panel">
+                        <span class="sidebar-panel-toggle-icon">📊</span>
+                        <span class="sidebar-panel-toggle-title">Memory</span>
+                        <span class="sidebar-panel-arrow">▾</span>
+                    </button>
+                    <div class="sidebar-panel-body collapsed" id="memory-panel">
+                        <div class="memory-monitor" id="memory-monitor">
+                            <div class="memory-monitor-header">
+                                <span class="memory-monitor-title">📊 Memory</span>
+                                <span class="memory-monitor-refresh" id="memory-refresh" title="Refresh stats">↻</span>
                             </div>
-                            <div class="util-graph-canvas-wrap">
-                                <canvas class="util-graph-canvas" id="cpu-graph-canvas" width="240" height="50"></canvas>
-                            </div>
-                        </div>
 
-                        <!-- GPU Graph (hidden if no GPU) -->
-                        <div class="util-graph-item" id="gpu-graph-section" style="display: none;">
-                            <div class="util-graph-label">
-                                <span class="util-graph-name">
-                                    <span class="memory-dot gpu-dot"></span>
-                                    GPU
-                                </span>
-                                <span class="util-graph-value" id="gpu-util-value">0%</span>
+                            <!-- GPU VRAM Section -->
+                            <div class="memory-section gpu-memory" id="gpu-memory-section" style="display: none;">
+                                <div class="memory-section-label">
+                                    <span class="memory-label-text">
+                                        <span class="memory-dot gpu-dot"></span>
+                                        <span id="gpu-memory-label">GPU VRAM</span>
+                                    </span>
+                                    <span class="memory-values" id="gpu-memory-values">—</span>
+                                </div>
+                                <div class="memory-bar-track">
+                                    <div class="memory-bar-fill gpu-fill" id="gpu-memory-bar" style="width: 0%"></div>
+                                </div>
+                                <div class="memory-details">
+                                    <span id="gpu-memory-used">—</span>
+                                    <span id="gpu-memory-free">Free: —</span>
+                                </div>
+                                <div class="memory-note" id="gpu-memory-note" style="display: none;"></div>
                             </div>
-                            <div class="util-graph-canvas-wrap">
-                                <canvas class="util-graph-canvas" id="gpu-graph-canvas" width="240" height="50"></canvas>
-                            </div>
-                        </div>
 
-                        <!-- RAM Graph -->
-                        <div class="util-graph-item">
-                            <div class="util-graph-label">
-                                <span class="util-graph-name">
-                                    <span class="memory-dot ram-dot"></span>
-                                    RAM
-                                </span>
-                                <span class="util-graph-value" id="ram-util-value">0%</span>
-                            </div>
-                            <div class="util-graph-canvas-wrap">
-                                <canvas class="util-graph-canvas" id="ram-graph-canvas" width="240" height="50"></canvas>
+                            <!-- System RAM Section -->
+                            <div class="memory-section ram-memory" id="ram-memory-section">
+                                <div class="memory-section-label">
+                                    <span class="memory-label-text">
+                                        <span class="memory-dot ram-dot"></span>
+                                        <span id="ram-memory-label">System RAM</span>
+                                    </span>
+                                    <span class="memory-values" id="ram-memory-values">—</span>
+                                </div>
+                                <div class="memory-bar-track">
+                                    <div class="memory-bar-fill ram-fill" id="ram-memory-bar" style="width: 0%"></div>
+                                </div>
+                                <div class="memory-details">
+                                    <span id="ram-memory-used">—</span>
+                                    <span id="ram-memory-free">Free: —</span>
+                                </div>
+                                <div class="memory-note" id="ram-memory-note" style="display: none;"></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="setting-group">
-                    <div class="setting-label">
-                        <span>Max Tokens</span>
-                        <span class="setting-value" id="max-tokens-display">512</span>
+                <!-- Utilization Panel -->
+                <div class="sidebar-panel">
+                    <button class="sidebar-panel-toggle" data-panel="util-panel" id="toggle-util-panel">
+                        <span class="sidebar-panel-toggle-icon">📈</span>
+                        <span class="sidebar-panel-toggle-title">Utilization</span>
+                        <span class="sidebar-panel-arrow">▾</span>
+                    </button>
+                    <div class="sidebar-panel-body collapsed" id="util-panel">
+                        <div class="util-graphs" id="util-graphs">
+                            <!-- CPU Graph -->
+                            <div class="util-graph-item">
+                                <div class="util-graph-label">
+                                    <span class="util-graph-name">
+                                        <span class="memory-dot" style="background: #ffa502; box-shadow: 0 0 6px rgba(255,165,2,0.5);"></span>
+                                        CPU
+                                    </span>
+                                    <span class="util-graph-value" id="cpu-util-value">0%</span>
+                                </div>
+                                <div class="util-graph-canvas-wrap">
+                                    <canvas class="util-graph-canvas" id="cpu-graph-canvas" width="240" height="50"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- GPU Graph (hidden if no GPU) -->
+                            <div class="util-graph-item" id="gpu-graph-section" style="display: none;">
+                                <div class="util-graph-label">
+                                    <span class="util-graph-name">
+                                        <span class="memory-dot gpu-dot"></span>
+                                        GPU
+                                    </span>
+                                    <span class="util-graph-value" id="gpu-util-value">0%</span>
+                                </div>
+                                <div class="util-graph-canvas-wrap">
+                                    <canvas class="util-graph-canvas" id="gpu-graph-canvas" width="240" height="50"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- RAM Graph -->
+                            <div class="util-graph-item">
+                                <div class="util-graph-label">
+                                    <span class="util-graph-name">
+                                        <span class="memory-dot ram-dot"></span>
+                                        RAM
+                                    </span>
+                                    <span class="util-graph-value" id="ram-util-value">0%</span>
+                                </div>
+                                <div class="util-graph-canvas-wrap">
+                                    <canvas class="util-graph-canvas" id="ram-graph-canvas" width="240" height="50"></canvas>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <input
-                        type="range"
-                        class="setting-slider"
-                        id="max-tokens-slider"
-                        min="64"
-                        max="2048"
-                        value="512"
-                        step="64"
-                    >
                 </div>
             </div>
         </aside>
@@ -228,6 +253,9 @@
                         <div class="status-dot loading" id="status-dot"></div>
                         <span id="status-text">Connecting...</span>
                     </div>
+                    <button class="btn-header-action" id="btn-export" title="Export conversation as JSON">
+                        <span class="header-action-icon">📥</span>
+                    </button>
                     <button class="btn-help" id="btn-help" title="Help & Features (?)">
                         <span class="help-icon">?</span>
                     </button>

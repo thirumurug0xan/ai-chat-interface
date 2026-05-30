@@ -368,7 +368,7 @@ class ModelEngine:
 
         return response
 
-    def generate_stream(self, history: list[dict]):
+    def generate_stream(self, history: list[dict], max_new_tokens: int = None):
         """
         Stream-generate a response token by token.
 
@@ -376,6 +376,8 @@ class ModelEngine:
 
         Args:
             history: List of {"role": "user"|"assistant", "content": "..."} dicts.
+            max_new_tokens: Override max new tokens for this generation.
+                            Falls back to self.max_new_tokens if None.
 
         Yields:
             str: Chunks of generated text.
@@ -384,6 +386,9 @@ class ModelEngine:
             raise RuntimeError("Model is not loaded. Call load() first.")
 
         from transformers import TextIteratorStreamer
+
+        # Determine effective max_new_tokens
+        effective_max = max_new_tokens if max_new_tokens is not None else self.max_new_tokens
 
         # Trim history to fit within token budget
         trimmed = self._trim_history_to_fit(history)
@@ -403,7 +408,7 @@ class ModelEngine:
 
             generation_kwargs = {
                 **inputs,
-                "max_new_tokens": self.max_new_tokens,
+                "max_new_tokens": effective_max,
                 "streamer": streamer,
             }
 
