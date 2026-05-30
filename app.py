@@ -159,9 +159,12 @@ def chat():
     if not engine.is_loaded():
         return jsonify({"error": "Model is not loaded yet. Please wait."}), 503
 
+    # Allow client to override max_new_tokens via request body
+    max_tokens = data.get("max_tokens", None)
+
     def stream():
         try:
-            for chunk in engine.generate_stream(messages):
+            for chunk in engine.generate_stream(messages, max_new_tokens=max_tokens):
                 if isinstance(chunk, dict) and "__meta__" in chunk:
                     # Forward generation metadata as a separate SSE event
                     payload = json.dumps({"meta": chunk["__meta__"]})
