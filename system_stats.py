@@ -50,7 +50,7 @@ def get_system_stats(active_device: str | None = None) -> dict:
 
     # Try to detect GPU stats
     device = (active_device or "").upper()
-    if device in ("GPU", "AUTO") or "HETERO" in device:
+    if device in ("GPU", "AUTO", "XPU") or "HETERO" in device or "XPU" in device:
         # Try NVIDIA first, then Intel
         gpu_stats = _get_nvidia_gpu_stats()
         if not gpu_stats and not wsl2:
@@ -132,16 +132,165 @@ def _get_nvidia_gpu_stats() -> dict | None:
         return None
 
 
+def _get_intel_gpu_stats_via_xpu_smi() -> dict | None:
+    """Try to get Intel XPU stats using xpu-smi CLI."""
+    import subprocess
+    import json
+    import re
+    try:
+        # Check if xpu-smi is available and get device list
+        result = subprocess.run(
+            ["xpu-smi", "discovery", "-j"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode != 0:
+            return None
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return None
+
+        device_list = data.get("device_list", [])
+        if not device_list:
+            return None
+
+        # Target the first device (device_id 0 or first in list)
+        device = device_list[0]
+        device_id = device.get("device_id", 0)
+        gpu_name = device.get("device_name", "Intel GPU")
+
+        # Parse physical memory size (e.g., "16384 MiB" or "16 GB" or an int)
+        total_bytes = None
+        mem_size_str = device.get("memory_physical_size") or device.get("memory_size")
+        if mem_size_str:
+            if isinstance(mem_size_str, (int, float)):
+                total_bytes = int(mem_size_str)
+            else:
+                match = re.search(r"(\d+(?:\.\d+)?)\s*([kmgt]i?b?)?", str(mem_size_str), re.IGNORECASE)
+                if match:
+                    val = float(match.group(1))
+                    unit = (match.group(2) or "").lower()
+                    multipliers = {
+                        "": 1, "b": 1, "kb": 1024, "kib": 1024,
+                        "mb": 1024**2, "mib": 1024**2,
+                        "gb": 1024**3, "gib": 1024**3,
+                        "tb": 1024**4, "tib": 1024**4,
+                    }
+                    total_bytes = int(val * multipliers.get(unit, 1))
+
+        # Get dynamic stats
+        stats_result = subprocess.run(
+            ["xpu-smi", "stats", "-d", str(device_id), "-j"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        used_bytes = None
+        percent = None
+
+        if stats_result.returncode == 0:
+            try:
+                stats_data = json.loads(stats_result.stdout)
+                stats_device_list = stats_data.get("device_list", [])
+                if stats_device_list:
+                    stats_device = stats_device_list[0]
+                    # The stats are often in stats_device.get("stats", {}) or stats_device
+                    stats_dict = stats_device.get("stats", {}) or stats_device
+
+                    # Try to find memory used
+                    mem_used = stats_dict.get("memory_used")
+                    if mem_used is None:
+                        # Try to iterate through keys to find something like memory_used
+                        for k, v in stats_dict.items():
+                            if "memory" in k and "used" in k:
+                                mem_used = v
+                                break
+
+                    # If it's a dict like {"value": 15, "unit": "MiB"}, parse it
+                    if isinstance(mem_used, dict):
+                        val = mem_used.get("value")
+                        unit = str(mem_used.get("unit") or "mib").lower()
+                        if val is not None:
+                            multipliers = {
+                                "b": 1, "kb": 1024, "kib": 1024,
+                                "mb": 1024**2, "mib": 1024**2,
+                                "gb": 1024**3, "gib": 1024**3,
+                            }
+                            used_bytes = int(float(val) * multipliers.get(unit, 1024**2))
+                    elif mem_used is not None:
+                        match = re.search(r"(\d+(?:\.\d+)?)\s*([kmgt]i?b?)?", str(mem_used), re.IGNORECASE)
+                        if match:
+                            val = float(match.group(1))
+                            unit = (match.group(2) or "mib").lower()
+                            multipliers = {
+                                "": 1024**2, "b": 1, "kb": 1024, "kib": 1024,
+                                "mb": 1024**2, "mib": 1024**2,
+                                "gb": 1024**3, "gib": 1024**3,
+                            }
+                            used_bytes = int(val * multipliers.get(unit, 1024**2))
+
+                    # Try to find memory utilization
+                    mem_util = stats_dict.get("memory_utilization")
+                    if mem_util is None:
+                        for k, v in stats_dict.items():
+                            if "memory" in k and "util" in k:
+                                mem_util = v
+                                break
+                    if isinstance(mem_util, dict):
+                        percent = mem_util.get("value")
+                    elif mem_util is not None:
+                        try:
+                            percent = float(mem_util)
+                        except ValueError:
+                            pass
+            except Exception as e:
+                print(f"[system_stats] Warning: Failed to parse xpu-smi stats: {e}")
+
+        # Fallbacks for missing metrics
+        if used_bytes is None and percent is not None and total_bytes is not None:
+            used_bytes = int(total_bytes * (percent / 100.0))
+
+        if percent is None and used_bytes is not None and total_bytes is not None and total_bytes > 0:
+            percent = round((used_bytes / total_bytes) * 100, 1)
+
+        if total_bytes is not None:
+            if used_bytes is None:
+                used_bytes = 0
+            free_bytes = total_bytes - used_bytes
+            return {
+                "name": gpu_name,
+                "type": "intel",
+                "total_bytes": total_bytes,
+                "used_bytes": used_bytes,
+                "free_bytes": free_bytes,
+                "percent": percent,
+                "total_display": _format_bytes(total_bytes),
+                "used_display": _format_bytes(used_bytes) if used_bytes is not None else "N/A",
+                "free_display": _format_bytes(free_bytes) if used_bytes is not None else "N/A",
+            }
+
+    except Exception as e:
+        print(f"[system_stats] Warning: Exception in _get_intel_gpu_stats_via_xpu_smi: {e}")
+
+    return None
+
+
 def _get_intel_gpu_stats() -> dict | None:
     """
     Try to get Intel GPU memory stats.
 
-    Intel integrated GPUs share system RAM, so we report:
-    1. The GPU's max allocation size from DRM sysfs (if available)
-    2. Fall back to shared memory info
-
-    For Intel discrete GPUs (Arc), we try intel_gpu_top.
+    First tries xpu-smi (Intel XPU System Management Interface) for discrete GPUs,
+    then falls back to DRM sysfs and shared memory estimation for integrated/other GPUs.
     """
+    # Try xpu-smi first for discrete Intel XPUs
+    xpu_stats = _get_intel_gpu_stats_via_xpu_smi()
+    if xpu_stats:
+        return xpu_stats
+
     try:
         # Try to find Intel GPU via DRM subsystem
         drm_path = "/sys/class/drm"
