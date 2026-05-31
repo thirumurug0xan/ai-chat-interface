@@ -39,8 +39,6 @@ const dom = {
     modelName: $("#model-name"),
     deviceBadge: $("#device-badge"),
     modelStatus: $("#model-status"),
-    maxTokensSlider: $("#max-tokens-slider"),
-    maxTokensDisplay: $("#max-tokens-display"),
     charCount: $("#char-count"),
     toastContainer: $("#toast-container"),
     // Memory monitor
@@ -87,11 +85,17 @@ const dom = {
     btnHelp: $("#btn-help"),
     helpModalOverlay: $("#help-modal-overlay"),
     helpModalClose: $("#help-modal-close"),
-    // Device selector
-    deviceSelector: $("#device-selector"),
-    deviceSelectorBtn: $("#device-selector-btn"),
-    deviceDropdown: $("#device-dropdown"),
-    autoResolvedLabel: $("#auto-resolved-label"),
+    // Settings modal
+    btnSettings: $("#btn-settings"),
+    settingsModalOverlay: $("#settings-modal-overlay"),
+    settingsModalClose: $("#settings-modal-close"),
+    settingDevice: $("#setting-device"),
+    settingMaxNewTokens: $("#setting-max-new-tokens"),
+    settingMaxNewTokensVal: $("#setting-max-new-tokens-val"),
+    settingMaxInputTokens: $("#setting-max-input-tokens"),
+    settingMaxInputTokensVal: $("#setting-max-input-tokens-val"),
+    btnSaveSettings: $("#btn-save-settings"),
+    // Device switching
     deviceSwitchingOverlay: $("#device-switching-overlay"),
     deviceSwitchingText: $("#device-switching-text"),
     // Export
@@ -158,13 +162,6 @@ function initEventListeners() {
         });
     });
 
-    // Max tokens slider
-    dom.maxTokensSlider.addEventListener("input", (e) => {
-        state.maxTokens = parseInt(e.target.value);
-        dom.maxTokensDisplay.textContent = state.maxTokens;
-        saveState();
-    });
-
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
         // Ctrl+N — new chat
@@ -177,7 +174,7 @@ function initEventListeners() {
         if (e.key === "Escape") {
             closeContextPopup();
             closeHelpModal();
-            closeDeviceDropdown();
+            closeSettingsModal();
         }
 
         // ? — open help (only when not typing in input)
@@ -216,6 +213,40 @@ function initEventListeners() {
         });
     }
 
+    // Settings button
+    if (dom.btnSettings) {
+        dom.btnSettings.addEventListener("click", openSettingsModal);
+    }
+
+    // Settings modal close
+    if (dom.settingsModalClose) {
+        dom.settingsModalClose.addEventListener("click", closeSettingsModal);
+    }
+
+    if (dom.settingsModalOverlay) {
+        dom.settingsModalOverlay.addEventListener("click", (e) => {
+            if (e.target === dom.settingsModalOverlay) closeSettingsModal();
+        });
+    }
+
+    // Settings sliders dynamic badges
+    if (dom.settingMaxNewTokens) {
+        dom.settingMaxNewTokens.addEventListener("input", (e) => {
+            dom.settingMaxNewTokensVal.textContent = e.target.value;
+        });
+    }
+
+    if (dom.settingMaxInputTokens) {
+        dom.settingMaxInputTokens.addEventListener("input", (e) => {
+            dom.settingMaxInputTokensVal.textContent = e.target.value;
+        });
+    }
+
+    // Settings save button
+    if (dom.btnSaveSettings) {
+        dom.btnSaveSettings.addEventListener("click", saveSettings);
+    }
+
     // Close context popup on outside click
     document.addEventListener("click", (e) => {
         if (dom.contextPopup && dom.contextPopup.classList.contains("visible")) {
@@ -223,32 +254,6 @@ function initEventListeners() {
                 closeContextPopup();
             }
         }
-        // Close device dropdown on outside click
-        if (dom.deviceDropdown && dom.deviceDropdown.classList.contains("visible")) {
-            if (!dom.deviceSelector.contains(e.target)) {
-                closeDeviceDropdown();
-            }
-        }
-    });
-
-    // Device selector
-    if (dom.deviceSelectorBtn) {
-        dom.deviceSelectorBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            toggleDeviceDropdown();
-        });
-    }
-
-    // Device option clicks
-    $$(".device-option").forEach((opt) => {
-        opt.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const device = opt.dataset.device;
-            if (device) {
-                closeDeviceDropdown();
-                switchDevice(device);
-            }
-        });
     });
 
     // Export button
@@ -287,13 +292,19 @@ async function fetchConfig() {
         // Sync max tokens from server config
         if (data.max_new_tokens) {
             state.maxTokens = data.max_new_tokens;
-            dom.maxTokensSlider.value = data.max_new_tokens;
-            dom.maxTokensDisplay.textContent = data.max_new_tokens;
+            if (dom.settingMaxNewTokens) {
+                dom.settingMaxNewTokens.value = data.max_new_tokens;
+                dom.settingMaxNewTokensVal.textContent = data.max_new_tokens;
+            }
         }
 
         // Store context window size
         if (data.max_input_tokens) {
             state.maxInputTokens = data.max_input_tokens;
+            if (dom.settingMaxInputTokens) {
+                dom.settingMaxInputTokens.value = data.max_input_tokens;
+                dom.settingMaxInputTokensVal.textContent = data.max_input_tokens;
+            }
             updateContextWindowUI(0, data.max_input_tokens);
         }
     } catch (err) {
@@ -834,8 +845,10 @@ function loadState() {
             state.conversations = data.conversations || [];
             state.activeConversationId = data.activeConversationId || null;
             state.maxTokens = data.maxTokens || 2048;
-            dom.maxTokensSlider.value = state.maxTokens;
-            dom.maxTokensDisplay.textContent = state.maxTokens;
+            if (dom.settingMaxNewTokens) {
+                dom.settingMaxNewTokens.value = state.maxTokens;
+                dom.settingMaxNewTokensVal.textContent = state.maxTokens;
+            }
         }
     } catch (err) {
         console.warn("Failed to load state:", err);
@@ -1302,92 +1315,127 @@ function initSVGGradient() {
     svg.insertBefore(defs, svg.firstChild);
 }
 
-// ── Device Switching ─────────────────────────────────────────────────────
-async function switchDevice(device) {
+// ── Settings Modal ────────────────────────────────────────────────────────
+function openSettingsModal() {
+    if (state.modelConfig) {
+        if (dom.settingDevice) {
+            dom.settingDevice.value = state.modelConfig.requested_device || "AUTO";
+        }
+        if (dom.settingMaxNewTokens) {
+            dom.settingMaxNewTokens.value = state.modelConfig.max_new_tokens || 2048;
+            dom.settingMaxNewTokensVal.textContent = dom.settingMaxNewTokens.value;
+        }
+        if (dom.settingMaxInputTokens) {
+            dom.settingMaxInputTokens.value = state.modelConfig.max_input_tokens || 1024;
+            dom.settingMaxInputTokensVal.textContent = dom.settingMaxInputTokens.value;
+        }
+        // update select option disabled states
+        const friendly = state.modelConfig.device_friendly || state.modelConfig.device || "—";
+        updateDeviceSelectorUI(state.modelConfig.requested_device || "AUTO", friendly, state.modelConfig.available_devices);
+    }
+    dom.settingsModalOverlay.classList.add("visible");
+}
+
+function closeSettingsModal() {
+    dom.settingsModalOverlay.classList.remove("visible");
+}
+
+async function saveSettings() {
     if (state.isGenerating) {
-        showToast("Cannot switch device while generating. Please wait.", "error");
+        showToast("Cannot save settings while generating. Please wait.", "error");
         return;
     }
 
-    const currentRequested = (state.modelConfig?.requested_device || "").toUpperCase();
-    if (device.toUpperCase() === currentRequested) {
-        showToast(`Already using ${device}`, "info");
-        return;
+    const newDevice = dom.settingDevice.value.toUpperCase();
+    const newMaxNewTokens = parseInt(dom.settingMaxNewTokens.value, 10);
+    const newMaxInputTokens = parseInt(dom.settingMaxInputTokens.value, 10);
+
+    const currentDevice = (state.modelConfig?.requested_device || "").toUpperCase();
+    const deviceChanged = newDevice !== currentDevice;
+
+    // Show switching overlay if device changed
+    if (deviceChanged) {
+        if (dom.deviceSwitchingOverlay) {
+            dom.deviceSwitchingText.textContent = `Switching device to ${newDevice}...`;
+            dom.deviceSwitchingOverlay.classList.add("visible");
+        }
+        dom.deviceBadge.textContent = newDevice;
+        dom.deviceBadge.className = "device-badge switching";
+        dom.btnSend.disabled = true;
+        setStatus("loading", "Switching device...");
+        dom.modelStatus.textContent = "Switching...";
     }
-
-    // Show switching overlay
-    if (dom.deviceSwitchingOverlay) {
-        dom.deviceSwitchingText.textContent = `Switching to ${device}...`;
-        dom.deviceSwitchingOverlay.classList.add("visible");
-    }
-
-    // Update badge to switching state
-    dom.deviceBadge.textContent = device;
-    dom.deviceBadge.className = "device-badge switching";
-
-    // Disable send button during switch
-    dom.btnSend.disabled = true;
-    setStatus("loading", "Switching device...");
-    dom.modelStatus.textContent = "Switching...";
 
     try {
-        const res = await fetch("/api/device/switch", {
+        const res = await fetch("/api/config/update", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ device: device }),
+            body: JSON.stringify({
+                device: newDevice,
+                max_new_tokens: newMaxNewTokens,
+                max_input_tokens: newMaxInputTokens
+            }),
         });
+
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.message || errData.error || "Failed to update configuration");
+        }
 
         const data = await res.json();
 
-        if (data.success) {
-            // Successful switch
-            const friendly = data.active_device_friendly || data.active_device || device;
-            updateDeviceBadge(friendly, data.requested_device || device);
-            updateDeviceSelectorUI(data.requested_device || device, friendly, state.modelConfig?.available_devices);
+        if (deviceChanged) {
+            // Check device switch result
+            const switchResult = data.device_switch_result || { success: data.loaded };
+            if (switchResult.success) {
+                showToast(switchResult.message || `Switched to ${newDevice}`, "success");
+            } else {
+                showToast(switchResult.message || `Failed to switch to ${newDevice}`, "error");
+            }
+        } else {
+            showToast("Settings saved successfully", "success");
+        }
 
+        // Apply updated config
+        state.modelConfig = data;
+        state.maxTokens = data.max_new_tokens;
+        state.maxInputTokens = data.max_input_tokens;
+        saveState();
+
+        const friendly = data.device_friendly || data.device || newDevice;
+        updateDeviceBadge(friendly, data.requested_device || newDevice);
+        updateDeviceSelectorUI(data.requested_device || newDevice, friendly, data.available_devices);
+
+        // Update read-only Model Name
+        if (dom.modelName && data.model_name) {
+            dom.modelName.textContent = data.model_name;
+        }
+
+        if (data.loaded) {
             setStatus("ready", "Ready");
             dom.modelStatus.textContent = "Loaded";
-            showToast(data.message || `Switched to ${friendly}`, "success");
-
-            // Refresh full config
-            await fetchConfig();
         } else {
-            // Failed — show fallback info
-            const fallbackFriendly = data.active_device_friendly || data.active_device || "Unknown";
-            updateDeviceBadge(fallbackFriendly, data.requested_device || currentRequested);
-            updateDeviceSelectorUI(
-                state.modelConfig?.requested_device || currentRequested,
-                fallbackFriendly,
-                state.modelConfig?.available_devices
-            );
-
-            if (data.active_device) {
-                setStatus("ready", "Ready");
-                dom.modelStatus.textContent = "Loaded";
-            } else {
-                setStatus("error", "Model offline");
-                dom.modelStatus.textContent = "Error";
-            }
-
-            showToast(data.message || `Failed to switch to ${device}`, "error");
-
-            // Refresh config to get accurate state
-            await fetchConfig();
+            setStatus("error", "Model offline");
+            dom.modelStatus.textContent = "Error";
         }
-    } catch (err) {
-        console.error("Device switch error:", err);
-        showToast(`Failed to switch to ${device}: ${err.message}`, "error");
 
-        // Restore previous state
+        // Update context window UI max limit
+        updateContextWindowUI(0, data.max_input_tokens);
+        
+        // Close modal
+        closeSettingsModal();
+    } catch (err) {
+        console.error("Save settings error:", err);
+        showToast(`Failed to save settings: ${err.message}`, "error");
+        
+        // Restore previous status
         setStatus("error", "Error");
         dom.modelStatus.textContent = "Error";
         await fetchConfig();
     } finally {
-        // Hide switching overlay
         if (dom.deviceSwitchingOverlay) {
             dom.deviceSwitchingOverlay.classList.remove("visible");
         }
-        // Re-enable send button
         dom.btnSend.disabled = false;
     }
 }
@@ -1421,58 +1469,28 @@ function updateDeviceBadge(friendlyDevice, requestedDevice) {
 
 function updateDeviceSelectorUI(requestedDevice, activeFriendly, availableDevices) {
     const requested = (requestedDevice || "").toUpperCase();
-    const friendly = (activeFriendly || "").toUpperCase();
-
-    // Update active state on options and disable unavailable ones
     const available = (availableDevices || []).map(d => d.toUpperCase());
 
-    $$(".device-option").forEach((opt) => {
-        const optDevice = (opt.dataset.device || "").toUpperCase();
+    if (dom.settingDevice) {
+        dom.settingDevice.value = requested;
         
-        // Active state
-        if (optDevice === requested) {
-            opt.classList.add("active");
-        } else {
-            opt.classList.remove("active");
-        }
-
-        // Available state (AUTO and CPU are always available, others checked dynamically)
-        if (optDevice !== "AUTO" && optDevice !== "CPU" && available.length > 0 && !available.includes(optDevice)) {
-            opt.classList.add("disabled");
-            opt.title = `${optDevice} is not available on this system`;
-        } else {
-            opt.classList.remove("disabled");
-            opt.title = `Switch to ${optDevice}`;
-        }
-    });
-
-    // Update AUTO resolved label
-    if (dom.autoResolvedLabel) {
-        if (requested === "AUTO") {
-            dom.autoResolvedLabel.textContent = `Using ${friendly}`;
-        } else {
-            dom.autoResolvedLabel.textContent = "Best available";
-        }
+        // Enable/disable select options based on availability
+        [...dom.settingDevice.options].forEach(opt => {
+            const optVal = opt.value;
+            // AUTO and CPU are always available, others checked dynamically
+            if (optVal !== "AUTO" && optVal !== "CPU" && available.length > 0 && !available.includes(optVal)) {
+                opt.disabled = true;
+                opt.text = `${optVal} (Unavailable)`;
+            } else {
+                opt.disabled = false;
+                // restore text
+                if (optVal === "AUTO") opt.text = "AUTO (Best available)";
+                if (optVal === "GPU") opt.text = "GPU (Intel integrated/discrete)";
+                if (optVal === "CPU") opt.text = "CPU (Universal compatibility)";
+                if (optVal === "XPU") opt.text = "XPU (Combined CPU + GPU)";
+            }
+        });
     }
-}
-
-// ── Device Dropdown ──────────────────────────────────────────────────────
-function toggleDeviceDropdown() {
-    if (dom.deviceDropdown.classList.contains("visible")) {
-        closeDeviceDropdown();
-    } else {
-        openDeviceDropdown();
-    }
-}
-
-function openDeviceDropdown() {
-    dom.deviceDropdown.classList.add("visible");
-    dom.deviceSelector.classList.add("open");
-}
-
-function closeDeviceDropdown() {
-    dom.deviceDropdown.classList.remove("visible");
-    dom.deviceSelector.classList.remove("open");
 }
 
 // ── Collapsible Panel Toggles ────────────────────────────────────────────

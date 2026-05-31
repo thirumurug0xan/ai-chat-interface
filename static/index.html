@@ -56,49 +56,11 @@
                                 <span class="label">Model</span>
                                 <span class="value" id="model-name">Loading...</span>
                             </div>
-                            <div class="model-info-row device-selector-row">
+                            <div class="model-info-row">
                                 <span class="label">Device</span>
-                                <div class="device-selector" id="device-selector">
-                                    <button class="device-selector-btn" id="device-selector-btn" title="Click to change device">
-                                        <span class="device-badge gpu" id="device-badge">—</span>
-                                        <span class="device-selector-arrow">▾</span>
-                                    </button>
-                                    <div class="device-dropdown" id="device-dropdown">
-                                        <div class="device-dropdown-header">Switch Hardware</div>
-                                        <button class="device-option" data-device="AUTO" id="device-opt-auto">
-                                            <span class="device-option-icon">🔄</span>
-                                            <div class="device-option-info">
-                                                <span class="device-option-name">AUTO</span>
-                                                <span class="device-option-desc" id="auto-resolved-label">Best available</span>
-                                            </div>
-                                            <span class="device-option-check" id="check-auto">✓</span>
-                                        </button>
-                                        <button class="device-option" data-device="GPU" id="device-opt-gpu">
-                                            <span class="device-option-icon">🎮</span>
-                                            <div class="device-option-info">
-                                                <span class="device-option-name">GPU</span>
-                                                <span class="device-option-desc">Intel integrated / discrete</span>
-                                            </div>
-                                            <span class="device-option-check" id="check-gpu">✓</span>
-                                        </button>
-                                        <button class="device-option" data-device="CPU" id="device-opt-cpu">
-                                            <span class="device-option-icon">💻</span>
-                                            <div class="device-option-info">
-                                                <span class="device-option-name">CPU</span>
-                                                <span class="device-option-desc">Universal compatibility</span>
-                                            </div>
-                                            <span class="device-option-check" id="check-cpu">✓</span>
-                                        </button>
-                                        <button class="device-option" data-device="XPU" id="device-opt-xpu">
-                                            <span class="device-option-icon">⚡</span>
-                                            <div class="device-option-info">
-                                                <span class="device-option-name">XPU</span>
-                                                <span class="device-option-desc">Combined CPU + GPU acceleration</span>
-                                            </div>
-                                            <span class="device-option-check" id="check-xpu">✓</span>
-                                        </button>
-                                    </div>
-                                </div>
+                                <span class="value">
+                                    <span class="device-badge" id="device-badge">—</span>
+                                </span>
                             </div>
                             <!-- Device switching overlay -->
                             <div class="device-switching-overlay" id="device-switching-overlay">
@@ -109,21 +71,6 @@
                                 <span class="label">Status</span>
                                 <span class="value" id="model-status">Connecting...</span>
                             </div>
-                        </div>
-                        <div class="setting-group">
-                            <div class="setting-label">
-                                <span>Max Tokens</span>
-                                <span class="setting-value" id="max-tokens-display">2048</span>
-                            </div>
-                            <input
-                                type="range"
-                                class="setting-slider"
-                                id="max-tokens-slider"
-                                min="64"
-                                max="4096"
-                                value="2048"
-                                step="64"
-                            >
                         </div>
                     </div>
                 </div>
@@ -255,6 +202,9 @@
                     <button class="btn-header-action" id="btn-export" title="Export conversation as JSON">
                         <span class="header-action-icon">📥</span>
                     </button>
+                    <button class="btn-header-action" id="btn-settings" title="Inference Settings">
+                        <span class="header-action-icon">⚙️</span>
+                    </button>
                     <button class="btn-help" id="btn-help" title="Help & Features (?)">
                         <span class="help-icon">?</span>
                     </button>
@@ -382,6 +332,54 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal-overlay">
+        <div class="modal settings-modal" id="settings-modal">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-title-icon">⚙️</span>
+                    <span>Inference Settings</span>
+                </div>
+                <button class="modal-close" id="settings-modal-close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <div class="setting-item">
+                        <label class="setting-label-bold" for="setting-device">Inference Device</label>
+                        <div class="setting-description">Select the hardware device for model execution.</div>
+                        <select id="setting-device" class="setting-select">
+                            <option value="AUTO">AUTO (Best available)</option>
+                            <option value="GPU">GPU (Intel integrated/discrete)</option>
+                            <option value="CPU">CPU (Universal compatibility)</option>
+                            <option value="XPU">XPU (Combined CPU + GPU)</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label-row">
+                            <label class="setting-label-bold" for="setting-max-new-tokens">Max Response Length (Max New Tokens)</label>
+                            <span class="setting-value-badge" id="setting-max-new-tokens-val">2048</span>
+                        </div>
+                        <div class="setting-description">Maximum number of tokens the model generates per response.</div>
+                        <input type="range" id="setting-max-new-tokens" class="setting-slider-modern" min="64" max="4096" step="64" value="2048">
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label-row">
+                            <label class="setting-label-bold" for="setting-max-input-tokens">Context Window (Max Input Tokens)</label>
+                            <span class="setting-value-badge" id="setting-max-input-tokens-val">1024</span>
+                        </div>
+                        <div class="setting-description">Limits history size to prevent GPU out-of-memory errors. Old messages are trimmed when this limit is reached.</div>
+                        <input type="range" id="setting-max-input-tokens" class="setting-slider-modern" min="256" max="4096" step="128" value="1024">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-save-settings" id="btn-save-settings">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Help Modal -->
     <div class="modal-overlay" id="help-modal-overlay">
         <div class="modal help-modal" id="help-modal">
@@ -496,12 +494,12 @@
                     </div>
                     <div class="help-items">
                         <div class="help-item">
-                            <div class="help-item-title">Max Tokens Slider</div>
-                            <div class="help-item-desc">Adjust the maximum length of AI responses using the slider in the sidebar. Higher values allow longer responses but take more time.</div>
+                            <div class="help-item-title">Inference Settings Menu</div>
+                            <div class="help-item-desc">Click the <strong>⚙️ Settings</strong> button in the top header. You can adjust the execution device, max response length, and context window size.</div>
                         </div>
                         <div class="help-item">
-                            <div class="help-item-title">Model Configuration</div>
-                            <div class="help-item-desc">Model, device, and token limits are set via the <code>.env</code> file on the server. See the README for available options.</div>
+                            <div class="help-item-title">Context Window & Sliders</div>
+                            <div class="help-item-desc">Adjust max input tokens to prevent GPU memory overflow, and max new tokens to control response lengths. Click Save Settings to apply them dynamically.</div>
                         </div>
                     </div>
                 </div>
