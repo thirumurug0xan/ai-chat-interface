@@ -101,6 +101,67 @@ def device_switch():
         }), 500
 
 
+@app.route("/api/config/update", methods=["POST"])
+def config_update():
+    """
+    Update configuration settings dynamically.
+
+    Expects JSON body:
+        {
+          "device": "GPU" | "CPU" | "AUTO" | "XPU", (optional)
+          "max_new_tokens": int, (optional)
+          "max_input_tokens": int (optional)
+        }
+
+    Returns updated config.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing config data"}), 400
+
+    device_changed = False
+    device_status = None
+
+    # Handle device switch if requested
+    if "device" in data:
+        requested = data["device"].strip().upper()
+        if requested != engine._requested_device:
+            if engine._lock.locked():
+                return jsonify({
+                    "success": False,
+                    "active_device": engine._active_device,
+                    "requested_device": requested,
+                    "message": "Cannot switch device while generation is in progress. Please wait.",
+                }), 409
+            device_status = engine.switch_device(requested)
+            device_changed = True
+
+    # Update tokens settings
+    if "max_new_tokens" in data:
+        try:
+            val = int(data["max_new_tokens"])
+            if 64 <= val <= 4096:
+                engine.max_new_tokens = val
+        except ValueError:
+            pass
+
+    if "max_input_tokens" in data:
+        try:
+            val = int(data["max_input_tokens"])
+            if 256 <= val <= 4096:
+                engine.max_input_tokens = val
+        except ValueError:
+            pass
+
+    # Fetch fresh config
+    res_config = engine.get_config()
+    if device_changed and device_status:
+        res_config["device_switch_result"] = device_status
+
+    return jsonify(res_config)
+
+
+
 @app.route("/api/context/count", methods=["POST"])
 def context_count():
     """
