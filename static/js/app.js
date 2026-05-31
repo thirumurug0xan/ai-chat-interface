@@ -963,9 +963,27 @@ function appendMessageToDOM(msg, animate = true) {
     const senderName = msg.role === "user" ? "You" : (state.modelConfig?.model_name || "Assistant");
 
     // Build action buttons — assistant messages get a retry button
-    let actionsHtml = `<button class="btn-message-action btn-copy-message" title="Copy message">📋 Copy</button>`;
+    let actionsHtml = `
+        <button class="btn-message-action btn-copy-message" title="Copy message">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="action-icon">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            Copy
+        </button>
+    `;
     if (msg.role === "assistant") {
-        actionsHtml += `<button class="btn-message-action btn-retry" title="Regenerate this response">🔄 Retry</button>`;
+        actionsHtml += `
+            <button class="btn-message-action btn-retry" title="Regenerate this response">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="action-icon">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+                    <path d="M16 16h5v5"></path>
+                </svg>
+                Retry
+            </button>
+        `;
     }
 
     div.innerHTML = `
