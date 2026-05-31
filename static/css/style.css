@@ -3655,6 +3655,45 @@ body {
     background: rgba(0, 0, 0, 0.25);
 }
 
+/* Modal and Popup Light Theme Overrides */
+.light-theme .modal {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+}
+
+.light-theme .context-popup {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-color: rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+}
+
+.light-theme .fs-details-pane {
+    background: rgba(0, 0, 0, 0.03) !important;
+}
+
+.light-theme .downloader-right-pane {
+    background: rgba(0, 0, 0, 0.03) !important;
+}
+
+.light-theme .downloader-search-input {
+    background: rgba(0, 0, 0, 0.03) !important;
+}
+
+.light-theme .setting-select {
+    background: rgba(0, 0, 0, 0.03) !important;
+}
+
+.light-theme .setting-select option {
+    background: #ffffff !important;
+    color: #1e1e26 !important;
+}
+
+.light-theme .setting-slider-modern {
+    background: rgba(0, 0, 0, 0.08) !important;
+}
+
+
 /* ── Sidebar Search ──────────────────────────────────────────────────────── */
 .sidebar-search-wrapper {
     position: relative;
