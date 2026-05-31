@@ -284,6 +284,103 @@ def chat_sync():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/fs/list", methods=["POST"])
+def fs_list():
+    """
+    List contents of a directory on the server filesystem.
+    Supports breadcrumb navigation and OpenVINO model folder detection.
+    """
+    data = request.get_json() or {}
+    target_path = data.get("path")
+
+    # Default to current workspace directory if no path specified
+    if not target_path:
+        target_path = os.getcwd()
+    else:
+        # Expand ~ to user home
+        if target_path.startswith("~"):
+            target_path = os.path.expanduser(target_path)
+
+    # Normalize to absolute path
+    target_path = os.path.abspath(target_path)
+
+    if not os.path.exists(target_path):
+        return jsonify({"error": f"Path '{target_path}' does not exist"}), 400
+
+    if not os.path.isdir(target_path):
+        return jsonify({"error": f"Path '{target_path}' is not a directory"}), 400
+
+    try:
+        entries = []
+        for entry in os.listdir(target_path):
+            entry_path = os.path.join(target_path, entry)
+            is_dir = os.path.isdir(entry_path)
+
+            # Check if directory looks like an OpenVINO model folder
+            is_model = False
+            if is_dir:
+                try:
+                    files = os.listdir(entry_path)
+                    xml_files = [f for f in files if f.endswith(".xml") and "openvino" in f.lower()]
+                    is_model = len(xml_files) > 0 or "openvino_model.xml" in files
+                except Exception:
+                    pass
+
+            entries.append({
+                "name": entry,
+                "path": entry_path,
+                "is_dir": is_dir,
+                "is_model": is_model
+            })
+
+        # Sort: directories first, then files; both alphabetically case-insensitive
+        entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+
+        return jsonify({
+            "current_path": target_path,
+            "parent_path": os.path.dirname(target_path),
+            "entries": entries,
+            "workspace_path": os.getcwd(),
+            "home_path": os.path.expanduser("~")
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model/switch", methods=["POST"])
+def model_switch():
+    """
+    Switch the active model folder at runtime.
+    """
+    data = request.get_json()
+    if not data or "model_path" not in data:
+        return jsonify({"error": "Missing 'model_path' in request body"}), 400
+
+    requested_path = data["model_path"].strip()
+
+    # Don't allow switching while generating
+    if engine._lock.locked():
+        return jsonify({
+            "success": False,
+            "model_name": engine.model_name,
+            "model_path": engine.model_path,
+            "message": "Cannot switch model while generation is in progress. Please wait.",
+        }), 409
+
+    try:
+        result = engine.switch_model(requested_path)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "model_name": engine.model_name,
+            "model_path": engine.model_path,
+            "message": f"Model switch failed: {str(e)}",
+        }), 500
+
+
 # ── Startup ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
