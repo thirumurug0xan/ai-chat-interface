@@ -46,7 +46,8 @@ class ModelEngine:
     AVAILABLE_DEVICES = ["AUTO", "GPU", "CPU", "XPU"]
 
     def __init__(self):
-        self.model_path = os.getenv("MODEL_PATH", "./qwen-0.5b-ov")
+        model_path = os.getenv("MODEL_PATH", "./qwen-0.5b-ov")
+        self.model_path = os.path.expanduser(model_path.strip()) if model_path else "./qwen-0.5b-ov"
         self.device = os.getenv("DEVICE", "AUTO")
         self.max_new_tokens = int(os.getenv("MAX_NEW_TOKENS", "512"))
         self.max_history = int(os.getenv("MAX_HISTORY", "20"))
@@ -70,6 +71,23 @@ class ModelEngine:
         """Load the model and tokenizer. Call once at startup."""
         if self._loaded:
             return
+
+        # Check if the path is explicitly intended to be a local path
+        # but the directory does not exist. This avoids confusing Hugging Face Hub
+        # validation errors when a local path is incorrect.
+        is_local = (
+            self.model_path.startswith(".") or
+            self.model_path.startswith("/") or
+            self.model_path.startswith("~") or
+            "\\" in self.model_path or
+            ".." in self.model_path or
+            os.path.isdir(self.model_path)
+        )
+        if is_local and not os.path.isdir(self.model_path):
+            raise FileNotFoundError(
+                f"Local model directory does not exist: '{self.model_path}'. "
+                f"Please check your path configuration."
+            )
 
         # Import here so the app can start even if openvino isn't installed
         # (useful for front-end-only development/testing)
