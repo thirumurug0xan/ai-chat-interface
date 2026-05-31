@@ -1243,12 +1243,13 @@ body {
     outline: none;
     color: var(--text-primary);
     font-family: var(--font-sans);
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 1.5;
     resize: none;
-    min-height: 24px;
+    min-height: 56px;
     max-height: 200px;
     overflow-y: auto;
+    padding: 6px 0;
 }
 
 #chat-input::placeholder {
@@ -1883,20 +1884,28 @@ body {
 }
 
 .context-popup-close {
-    background: none;
-    border: none;
-    color: var(--text-tertiary);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #ff5f56;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    color: transparent;
     cursor: pointer;
-    font-size: 14px;
-    padding: 4px;
-    border-radius: 4px;
-    transition: all var(--transition-fast);
+    font-size: 8px;
+    font-weight: 700;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all var(--transition-fast);
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .context-popup-close:hover {
-    color: var(--text-primary);
-    background: var(--bg-glass-strong);
+    background-color: #ff5f56;
+    color: #4c0000;
 }
 
 .context-popup-body {
@@ -2199,24 +2208,28 @@ body {
 }
 
 .modal-close {
-    background: var(--bg-glass);
-    border: 1px solid var(--border-subtle);
-    color: var(--text-tertiary);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: #ff5f56;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    color: transparent;
     cursor: pointer;
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-sm);
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    padding: 0;
     transition: all var(--transition-fast);
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .modal-close:hover {
-    color: var(--text-primary);
-    background: var(--bg-glass-strong);
-    border-color: var(--border-medium);
+    background-color: #ff5f56;
+    color: #4c0000;
 }
 
 .modal-body {
