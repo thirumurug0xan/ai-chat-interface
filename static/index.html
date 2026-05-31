@@ -75,6 +75,9 @@
                                 <button class="btn-switch-model" id="btn-switch-model" title="Select a model from the server filesystem">
                                     📁 Switch Model...
                                 </button>
+                                <button class="btn-download-model" id="btn-download-model" title="Search and download new model from Hugging Face">
+                                    📥 Download Model...
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -641,8 +644,117 @@
         </div>
     </div>
 
+    <!-- Model Downloader Modal -->
+    <div class="modal-overlay" id="model-downloader-modal-overlay">
+        <div class="modal model-downloader-modal" id="model-downloader-modal">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-title-icon">📥</span>
+                    <span>Download & Export OpenVINO Model</span>
+                </div>
+                <button class="modal-close" id="model-downloader-modal-close">✕</button>
+            </div>
+            
+            <div class="modal-body downloader-modal-body">
+                <!-- Left: Search and Parameters -->
+                <div class="downloader-left-pane">
+                    <!-- Search Section -->
+                    <div class="downloader-section">
+                        <label class="setting-label-bold" for="downloader-search-input">Search Hugging Face Models</label>
+                        <div class="setting-description">Search the HF model hub (optimized for text generation).</div>
+                        <div class="downloader-search-wrapper">
+                            <input type="text" id="downloader-search-input" class="downloader-search-input" placeholder="Search Qwen, Llama, Phi, etc..." value="qwen">
+                            <button class="btn-downloader-search" id="btn-downloader-search">Search</button>
+                        </div>
+                        
+                        <!-- Search Results -->
+                        <div class="downloader-results-container" id="downloader-results-container">
+                            <div class="downloader-results-empty">
+                                Type a search term and click Search to list models from Hugging Face.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="downloader-section">
+                        <div class="downloader-param-row">
+                            <div class="setting-item">
+                                <label class="setting-label-bold" for="downloader-model-id">Hugging Face Model ID</label>
+                                <input type="text" id="downloader-model-id" class="setting-select" placeholder="e.g., Qwen/Qwen2.5-0.5B-Instruct">
+                            </div>
+                        </div>
+
+                        <div class="downloader-param-grid">
+                            <div class="setting-item">
+                                <label class="setting-label-bold" for="downloader-weight-format">Weight Format</label>
+                                <select id="downloader-weight-format" class="setting-select">
+                                    <option value="int8" selected>int8 (Balanced, recommended)</option>
+                                    <option value="int4">int4 (Fast, lower accuracy)</option>
+                                    <option value="fp16">fp16 (High precision)</option>
+                                    <option value="fp32">fp32 (Full precision)</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label class="setting-label-bold" for="downloader-task">Task Type</label>
+                                <select id="downloader-task" class="setting-select">
+                                    <option value="text-generation-with-past" selected>text-generation-with-past</option>
+                                    <option value="text-generation">text-generation</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="downloader-param-row">
+                            <div class="setting-item">
+                                <label class="setting-label-bold" for="downloader-output-dir">Local Folder Name</label>
+                                <div class="setting-description">Folder in your workspace to save the model.</div>
+                                <input type="text" id="downloader-output-dir" class="setting-select" placeholder="e.g., qwen-0.5b-ov">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Active Job Console Logs -->
+                <div class="downloader-right-pane">
+                    <div class="downloader-console-header-row">
+                        <span class="downloader-console-title">Console Output</span>
+                        <div class="downloader-console-status">
+                            <span class="status-dot" id="downloader-job-dot" style="display: none;"></span>
+                            <span id="downloader-job-status-text">No active job</span>
+                        </div>
+                    </div>
+                    
+                    <div class="downloader-console-container">
+                        <div class="downloader-console-output" id="downloader-console-output">
+                            <!-- Logs will stream here -->
+                            <div class="console-placeholder">Console idle. Fill in parameters and click "Start Export".</div>
+                        </div>
+                        <div class="downloader-progress-wrap" id="downloader-progress-wrap" style="display: none;">
+                            <div class="downloader-progress-bar">
+                                <div class="downloader-progress-fill" id="downloader-progress-fill"></div>
+                            </div>
+                            <div class="downloader-progress-text" id="downloader-progress-text">Exporting: 0%</div>
+                        </div>
+                    </div>
+
+                    <div class="downloader-job-actions">
+                        <button class="btn-downloader-cancel" id="btn-downloader-cancel" disabled>Cancel Job</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer downloader-modal-footer">
+                <div class="downloader-footer-info" id="downloader-footer-info">
+                    Make sure you have enough disk space and a stable connection.
+                </div>
+                <div class="downloader-actions">
+                    <button class="btn-downloader-close" id="btn-downloader-close">Close</button>
+                    <button class="btn-downloader-start" id="btn-downloader-start" disabled>Start Export</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast container -->
-    <div class="toast-container" id="toast-container"></div>
+    <div class="toast-container" id="toast-container"></div></div>
 
     <script src="/static/js/app.js"></script>
 </body>

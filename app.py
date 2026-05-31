@@ -8,6 +8,13 @@ import os
 import json
 import traceback
 import psutil
+import urllib.request
+import urllib.parse
+import uuid
+import threading
+import time
+import shutil
+import subprocess
 from flask import Flask, request, Response, jsonify, send_from_directory
 from dotenv import load_dotenv
 from model_engine import ModelEngine
@@ -19,6 +26,53 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 # ── Initialize the model engine ──────────────────────────────────────────────
 engine = ModelEngine()
+
+# Global dictionary to track Hugging Face model export and download processes
+active_downloads = {}
+
+def run_export_process(task_id, cmd, output_dir):
+    task = active_downloads.get(task_id)
+    if not task:
+        return
+    
+    try:
+        # Create output directory parent folders if they don't exist
+        os.makedirs(os.path.dirname(output_dir), exist_ok=True)
+        
+        task["logs"].append(f"Starting export command: {' '.join(cmd)}\n\n")
+        
+        # Start subprocess, redirect stderr to stdout so we capture everything
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        task["process"] = process
+        
+        # Read output line by line as it is generated
+        for line in iter(process.stdout.readline, ""):
+            task["logs"].append(line)
+        
+        process.wait()
+        
+        if process.returncode == 0:
+            task["status"] = "completed"
+            task["logs"].append("\n[COMPLETED] Model export finished successfully.")
+        else:
+            task["status"] = "failed"
+            task["error"] = f"Exit code: {process.returncode}"
+            task["logs"].append(f"\n[FAILED] Model export failed with exit code: {process.returncode}")
+    except Exception as e:
+        task["status"] = "failed"
+        task["error"] = str(e)
+        task["logs"].append(f"\n[ERROR] Exception occurred during export: {str(e)}")
+        traceback.print_exc()
+    finally:
+        task["process"] = None
+
 
 
 # ── Static file serving ──────────────────────────────────────────────────────
@@ -379,6 +433,199 @@ def model_switch():
             "model_path": engine.model_path,
             "message": f"Model switch failed: {str(e)}",
         }), 500
+
+
+# ── Model Downloader Endpoints ───────────────────────────────────────────────
+
+@app.route("/api/models/search", methods=["GET"])
+def models_search():
+    """
+    Search Hugging Face models for text-generation.
+    """
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify([])
+    
+    url = f"https://huggingface.co/api/models?search={urllib.parse.quote(query)}&filter=text-generation&limit=10&sort=downloads&direction=-1"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            results = []
+            for item in data:
+                model_id = item.get("id", "")
+                downloads = item.get("downloads", 0)
+                likes = item.get("likes", 0)
+                author = item.get("author", "")
+                if model_id:
+                    results.append({
+                        "model_id": model_id,
+                        "downloads": downloads,
+                        "likes": likes,
+                        "author": author
+                    })
+            return jsonify(results)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to search Hugging Face: {str(e)}"}), 500
+
+
+@app.route("/api/models/download", methods=["POST"])
+def models_download():
+    """
+    Start downloading and exporting a Hugging Face model to OpenVINO.
+    """
+    data = request.get_json() or {}
+    model_id = data.get("model_id", "").strip()
+    weight_format = data.get("weight_format", "int8").strip()
+    task = data.get("task", "text-generation-with-past").strip()
+    output_dir_name = data.get("output_dir", "").strip()
+    
+    if not model_id:
+        return jsonify({"error": "Missing 'model_id' in request body"}), 400
+    if not output_dir_name:
+        return jsonify({"error": "Missing 'output_dir' in request body"}), 400
+        
+    # Prevent directory traversal by sanitizing the directory name
+    workspace_path = os.path.abspath(os.getcwd())
+    output_dir_name = os.path.basename(output_dir_name.strip())
+    output_path = os.path.abspath(os.path.join(workspace_path, output_dir_name))
+    
+    # Generate unique task ID
+    task_id = str(uuid.uuid4())[:8]
+    
+    # Check if a task is already exporting to the same directory or has the same model ID
+    for tid, t in active_downloads.items():
+        if t["status"] == "running" and (t["output_dir"] == output_path or t["model_id"] == model_id):
+            return jsonify({"error": "An export job for this model or output directory is already running"}), 409
+
+    # Build optimum-cli export command
+    optimum_executable = shutil.which("optimum-cli")
+    if not optimum_executable:
+        # Check local venv/bin
+        local_optimum = os.path.join(workspace_path, "venv", "bin", "optimum-cli")
+        if os.path.exists(local_optimum):
+            optimum_executable = local_optimum
+        else:
+            optimum_executable = "optimum-cli"
+            
+    cmd = [optimum_executable, "export", "openvino", "--model", model_id]
+    if task:
+        cmd.extend(["--task", task])
+    if weight_format:
+        cmd.extend(["--weight-format", weight_format])
+    cmd.append(output_path)
+    
+    # Initialize task state
+    active_downloads[task_id] = {
+        "task_id": task_id,
+        "model_id": model_id,
+        "weight_format": weight_format,
+        "task": task,
+        "output_dir": output_path,
+        "output_dir_name": output_dir_name,
+        "status": "running",
+        "logs": [],
+        "process": None,
+        "error": None,
+        "start_time": time.time()
+    }
+    
+    # Start thread
+    thread = threading.Thread(
+        target=run_export_process,
+        args=(task_id, cmd, output_path),
+        daemon=True
+    )
+    thread.start()
+    
+    return jsonify({
+        "success": True,
+        "task_id": task_id,
+        "message": f"Export process started for {model_id}."
+    })
+
+
+@app.route("/api/models/download/status", methods=["GET"])
+def models_download_status():
+    """
+    Get status of all download/export tasks.
+    """
+    tasks_summary = {}
+    for tid, t in active_downloads.items():
+        elapsed = time.time() - t["start_time"] if t["status"] == "running" else None
+        tasks_summary[tid] = {
+            "task_id": tid,
+            "model_id": t["model_id"],
+            "weight_format": t["weight_format"],
+            "task": t["task"],
+            "output_dir_name": t["output_dir_name"],
+            "status": t["status"],
+            "error": t["error"],
+            "elapsed_sec": round(elapsed, 1) if elapsed else None
+        }
+    return jsonify(tasks_summary)
+
+
+@app.route("/api/models/download/stream/<task_id>", methods=["GET"])
+def models_download_stream(task_id):
+    """
+    Stream export logs via SSE.
+    """
+    task = active_downloads.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+        
+    def generate():
+        idx = 0
+        while True:
+            # Yield any unsent logs
+            while idx < len(task["logs"]):
+                yield f"data: {json.dumps({'log': task['logs'][idx], 'status': task['status']})}\n\n"
+                idx += 1
+                
+            if task["status"] in ["completed", "failed"]:
+                # Send final status and end SSE
+                yield f"data: [DONE]\n\n"
+                break
+                
+            time.sleep(0.5)
+            
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+@app.route("/api/models/download/cancel/<task_id>", methods=["POST"])
+def models_download_cancel(task_id):
+    """
+    Cancel a running export job.
+    """
+    task = active_downloads.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+        
+    if task["status"] != "running":
+        return jsonify({"error": "Task is not running"}), 400
+        
+    process = task.get("process")
+    if process:
+        try:
+            process.terminate()
+            task["status"] = "failed"
+            task["error"] = "Cancelled by user"
+            task["logs"].append("\n[TERMINATED] Export task cancelled by user.")
+            return jsonify({"success": True, "message": "Export task cancelled successfully."})
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Failed to cancel task: {str(e)}"}), 500
+            
+    return jsonify({"success": False, "message": "No active process found for task."})
 
 
 # ── Startup ──────────────────────────────────────────────────────────────────

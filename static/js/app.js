@@ -26,6 +26,12 @@ const fsState = {
     treeDataCache: new Map(),
 };
 
+const downloaderState = {
+    activeTaskId: null,
+    jobStatus: "idle", // idle, running, completed, failed
+    eventSource: null,
+};
+
 // ── DOM References ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -127,6 +133,26 @@ const dom = {
     btnFsConfirm: $("#btn-fs-confirm"),
     modelSwitchingOverlay: $("#model-switching-overlay"),
     modelSwitchingTitle: $("#model-switching-title"),
+    // Model Downloader Modal
+    btnDownloadModel: $("#btn-download-model"),
+    modelDownloaderOverlay: $("#model-downloader-modal-overlay"),
+    modelDownloaderClose: $("#model-downloader-modal-close"),
+    downloaderSearchInput: $("#downloader-search-input"),
+    btnDownloaderSearch: $("#btn-downloader-search"),
+    downloaderResultsContainer: $("#downloader-results-container"),
+    downloaderModelId: $("#downloader-model-id"),
+    downloaderWeightFormat: $("#downloader-weight-format"),
+    downloaderTask: $("#downloader-task"),
+    downloaderOutputDir: $("#downloader-output-dir"),
+    downloaderJobDot: $("#downloader-job-dot"),
+    downloaderJobStatusText: $("#downloader-job-status-text"),
+    downloaderConsoleOutput: $("#downloader-console-output"),
+    downloaderProgressWrap: $("#downloader-progress-wrap"),
+    downloaderProgressFill: $("#downloader-progress-fill"),
+    downloaderProgressText: $("#downloader-progress-text"),
+    btnDownloaderCancel: $("#btn-downloader-cancel"),
+    btnDownloaderClose: $("#btn-downloader-close"),
+    btnDownloaderStart: $("#btn-downloader-start"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -203,6 +229,7 @@ function initEventListeners() {
             closeHelpModal();
             closeSettingsModal();
             closeModelBrowserModal();
+            closeModelDownloaderModal();
         }
 
         // ? — open help (only when not typing in input)
@@ -361,6 +388,59 @@ function initEventListeners() {
     // Confirm selection (Load Model)
     if (dom.btnFsConfirm) {
         dom.btnFsConfirm.addEventListener("click", loadModelFromPath);
+    }
+
+    // Model Downloader Open
+    if (dom.btnDownloadModel) {
+        dom.btnDownloadModel.addEventListener("click", openModelDownloaderModal);
+    }
+    // Model Downloader Close
+    if (dom.modelDownloaderClose) {
+        dom.modelDownloaderClose.addEventListener("click", closeModelDownloaderModal);
+    }
+    if (dom.btnDownloaderClose) {
+        dom.btnDownloaderClose.addEventListener("click", closeModelDownloaderModal);
+    }
+    if (dom.modelDownloaderOverlay) {
+        dom.modelDownloaderOverlay.addEventListener("click", (e) => {
+            if (e.target === dom.modelDownloaderOverlay) closeModelDownloaderModal();
+        });
+    }
+    // Model Downloader Search
+    if (dom.btnDownloaderSearch) {
+        dom.btnDownloaderSearch.addEventListener("click", handleDownloaderSearch);
+    }
+    if (dom.downloaderSearchInput) {
+        dom.downloaderSearchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                handleDownloaderSearch();
+            }
+        });
+    }
+    // Input validation monitor
+    const validateDownloaderInputs = () => {
+        const modelId = dom.downloaderModelId.value.trim();
+        const outputDir = dom.downloaderOutputDir.value.trim();
+        if (modelId && outputDir && (downloaderState.jobStatus !== "running")) {
+            dom.btnDownloaderStart.disabled = false;
+        } else {
+            dom.btnDownloaderStart.disabled = true;
+        }
+    };
+    if (dom.downloaderModelId) {
+        dom.downloaderModelId.addEventListener("input", validateDownloaderInputs);
+    }
+    if (dom.downloaderOutputDir) {
+        dom.downloaderOutputDir.addEventListener("input", validateDownloaderInputs);
+    }
+    // Start/Load Export Action
+    if (dom.btnDownloaderStart) {
+        dom.btnDownloaderStart.addEventListener("click", handleStartExport);
+    }
+    // Cancel Export Action
+    if (dom.btnDownloaderCancel) {
+        dom.btnDownloaderCancel.addEventListener("click", handleCancelExport);
     }
 }
 
@@ -2051,5 +2131,356 @@ async function loadModelFromPath() {
         }
         if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
         if (dom.btnFsCancel) dom.btnFsCancel.disabled = false;
+    }
+}
+
+// ── Model Downloader Functions ──────────────────────────────────────────────
+
+function openModelDownloaderModal() {
+    dom.modelDownloaderOverlay.classList.add("visible");
+    // Check if there is an active running download on the server to resume monitoring
+    checkActiveDownloadsAndResume();
+}
+
+function closeModelDownloaderModal() {
+    dom.modelDownloaderOverlay.classList.remove("visible");
+}
+
+async function checkActiveDownloadsAndResume() {
+    try {
+        const res = await fetch("/api/models/download/status");
+        const tasks = await res.json();
+        
+        // Find if there is any running task
+        const runningTask = Object.values(tasks).find(t => t.status === "running");
+        if (runningTask) {
+            downloaderState.activeTaskId = runningTask.task_id;
+            downloaderState.jobStatus = "running";
+            resumeLogStreaming(runningTask.task_id);
+        } else {
+            // Update UI status if no task is running
+            if (downloaderState.jobStatus === "idle") {
+                updateDownloaderJobUI("idle", "No active job");
+            }
+        }
+    } catch (err) {
+        console.error("Failed to check active downloads:", err);
+    }
+}
+
+async function handleDownloaderSearch() {
+    const q = dom.downloaderSearchInput.value.trim();
+    if (!q) return;
+    
+    dom.downloaderResultsContainer.innerHTML = `
+        <div class="downloader-results-empty">
+            <div class="device-switching-spinner" style="margin: 0 auto 10px;"></div>
+            Searching Hugging Face...
+        </div>
+    `;
+    
+    try {
+        const res = await fetch(`/api/models/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        renderDownloaderSearchResults(data);
+    } catch (err) {
+        console.error(err);
+        dom.downloaderResultsContainer.innerHTML = `
+            <div class="downloader-results-empty" style="color: #ff6b6b;">
+                Failed to search: ${err.message}
+            </div>
+        `;
+    }
+}
+
+function renderDownloaderSearchResults(results) {
+    const container = dom.downloaderResultsContainer;
+    container.innerHTML = "";
+    
+    if (results.length === 0) {
+        container.innerHTML = `
+            <div class="downloader-results-empty">
+                No matching models found. Try another search.
+            </div>
+        `;
+        return;
+    }
+    
+    results.forEach(model => {
+        const card = document.createElement("div");
+        card.className = "downloader-result-card";
+        
+        const downloadsK = model.downloads >= 1000 ? (model.downloads / 1000).toFixed(1) + "k" : model.downloads;
+        
+        card.innerHTML = `
+            <div class="downloader-result-title">${escapeHtml(model.model_id)}</div>
+            <div class="downloader-result-meta">
+                <span class="downloader-meta-item">📥 ${downloadsK} downloads</span>
+                <span class="downloader-meta-item">❤️ ${model.likes} likes</span>
+                ${model.author ? `<span class="downloader-meta-item">👤 ${escapeHtml(model.author)}</span>` : ""}
+            </div>
+        `;
+        
+        card.addEventListener("click", () => {
+            // Select card
+            $$(".downloader-result-card").forEach(c => c.classList.remove("selected"));
+            card.classList.add("selected");
+            
+            // Populate fields
+            dom.downloaderModelId.value = model.model_id;
+            
+            // Suggest output directory name (slugify)
+            const slug = model.model_id.toLowerCase()
+                .replace(/[^a-z0-9]/g, "-")
+                .replace(/-+/g, "-")
+                .replace(/^-|-$/g, "");
+            dom.downloaderOutputDir.value = slug + "-ov";
+            
+            // Trigger input validation
+            dom.downloaderModelId.dispatchEvent(new Event("input"));
+        });
+        
+        container.appendChild(card);
+    });
+}
+
+function updateDownloaderJobUI(status, text) {
+    downloaderState.jobStatus = status;
+    
+    const dot = dom.downloaderJobDot;
+    const label = dom.downloaderJobStatusText;
+    
+    dot.style.display = status === "idle" ? "none" : "inline-block";
+    label.textContent = text;
+    
+    if (status === "running") {
+        dot.className = "status-dot loading";
+        dom.downloaderProgressWrap.style.display = "block";
+        dom.downloaderProgressFill.className = "downloader-progress-fill running";
+        dom.downloaderProgressFill.style.width = "100%";
+        dom.downloaderProgressText.textContent = "Exporting model...";
+        dom.btnDownloaderCancel.disabled = false;
+        dom.btnDownloaderStart.disabled = true;
+        dom.btnDownloaderStart.textContent = "Exporting...";
+    } else if (status === "completed") {
+        dot.className = "status-dot";
+        dot.style.background = "#44b700";
+        dot.style.boxShadow = "0 0 8px rgba(68,183,0,0.5)";
+        dom.downloaderProgressWrap.style.display = "block";
+        dom.downloaderProgressFill.className = "downloader-progress-fill";
+        dom.downloaderProgressFill.style.width = "100%";
+        dom.downloaderProgressText.textContent = "Success! Export completed.";
+        dom.btnDownloaderCancel.disabled = true;
+        dom.btnDownloaderStart.disabled = false;
+        dom.btnDownloaderStart.textContent = "Load Model";
+    } else if (status === "failed") {
+        dot.className = "status-dot error";
+        dom.downloaderProgressWrap.style.display = "block";
+        dom.downloaderProgressFill.className = "downloader-progress-fill";
+        dom.downloaderProgressFill.style.width = "0%";
+        dom.downloaderProgressText.textContent = "Export failed.";
+        dom.btnDownloaderCancel.disabled = true;
+        dom.btnDownloaderStart.disabled = false;
+        dom.btnDownloaderStart.textContent = "Start Export";
+    } else {
+        // idle
+        dom.downloaderProgressWrap.style.display = "none";
+        dom.btnDownloaderCancel.disabled = true;
+        dom.btnDownloaderStart.disabled = !dom.downloaderModelId.value.trim() || !dom.downloaderOutputDir.value.trim();
+        dom.btnDownloaderStart.textContent = "Start Export";
+    }
+}
+
+async function handleStartExport() {
+    // If job was completed, click loads the model immediately
+    if (downloaderState.jobStatus === "completed") {
+        const outputDir = dom.downloaderOutputDir.value.trim();
+        if (outputDir) {
+            closeModelDownloaderModal();
+            
+            // Show load loader overlay
+            if (dom.modelSwitchingOverlay) {
+                dom.modelSwitchingOverlay.classList.add("visible");
+                dom.modelSwitchingTitle.textContent = `Loading OpenVINO Model...`;
+            }
+            
+            try {
+                // Fetch workspace path
+                const fsRes = await fetch("/api/fs/list", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ path: "" })
+                });
+                const fsData = await fsRes.json();
+                const workspacePath = fsData.workspace_path || ".";
+                const fullModelPath = `${workspacePath}/${outputDir}`;
+                
+                const res = await fetch("/api/model/switch", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model_path: fullModelPath })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`Successfully loaded downloaded model!`, "success");
+                    await fetchConfig();
+                } else {
+                    showToast(`Failed to load model: ${data.message}`, "error");
+                }
+            } catch (err) {
+                showToast(`Failed to switch: ${err.message}`, "error");
+            } finally {
+                if (dom.modelSwitchingOverlay) {
+                    dom.modelSwitchingOverlay.classList.remove("visible");
+                }
+            }
+        }
+        return;
+    }
+
+    const modelId = dom.downloaderModelId.value.trim();
+    const weightFormat = dom.downloaderWeightFormat.value;
+    const task = dom.downloaderTask.value;
+    const outputDir = dom.downloaderOutputDir.value.trim();
+    
+    if (!modelId || !outputDir) {
+        showToast("Please fill in all model details.", "error");
+        return;
+    }
+    
+    updateDownloaderJobUI("running", "Starting...");
+    dom.downloaderConsoleOutput.innerHTML = `<div style="color: var(--accent-2)">[SYSTEM] Requesting export for ${modelId}...</div>\n`;
+    
+    try {
+        const res = await fetch("/api/models/download", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                model_id: modelId,
+                weight_format: weightFormat,
+                task: task,
+                output_dir: outputDir
+            })
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || "Failed to start export");
+        }
+        
+        downloaderState.activeTaskId = data.task_id;
+        showToast("Export process started in background", "success");
+        resumeLogStreaming(data.task_id);
+    } catch (err) {
+        console.error(err);
+        showToast(err.message, "error");
+        dom.downloaderConsoleOutput.innerHTML += `<div style="color: #ff6b6b;">[SYSTEM ERROR] Failed to start job: ${err.message}</div>\n`;
+        updateDownloaderJobUI("failed", "Failed to start");
+    }
+}
+
+function resumeLogStreaming(taskId) {
+    if (downloaderState.eventSource) {
+        downloaderState.eventSource.close();
+    }
+    
+    const consoleEl = dom.downloaderConsoleOutput;
+    consoleEl.innerHTML = `<div style="color: var(--accent-2)">[SYSTEM] Connected to export process logs...</div>\n`;
+    
+    updateDownloaderJobUI("running", "Exporting...");
+    
+    const ev = new EventSource(`/api/models/download/stream/${taskId}`);
+    downloaderState.eventSource = ev;
+    
+    ev.onmessage = (event) => {
+        if (event.data === "[DONE]") {
+            ev.close();
+            downloaderState.eventSource = null;
+            checkTaskStatus(taskId);
+            return;
+        }
+        
+        try {
+            const data = JSON.parse(event.data);
+            
+            const line = document.createElement("div");
+            line.textContent = data.log;
+            
+            if (data.log.toLowerCase().includes("error") || data.log.toLowerCase().includes("failed")) {
+                line.style.color = "#ff6b6b";
+            } else if (data.log.toLowerCase().includes("successfully") || data.log.toLowerCase().includes("completed")) {
+                line.style.color = "#2ed573";
+            } else if (data.log.startsWith("Starting export command")) {
+                line.style.color = "var(--accent-3)";
+                line.style.fontWeight = "bold";
+            }
+            
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            
+            if (data.status && data.status !== downloaderState.jobStatus) {
+                updateDownloaderJobUI(data.status, data.status === "completed" ? "Completed" : data.status === "failed" ? "Failed" : "Exporting...");
+            }
+        } catch (err) {
+            console.error("Error parsing SSE log stream data:", err);
+        }
+    };
+    
+    ev.onerror = () => {
+        console.error("SSE connection error for task log streaming");
+        ev.close();
+        downloaderState.eventSource = null;
+        checkTaskStatus(taskId);
+    };
+}
+
+async function checkTaskStatus(taskId) {
+    try {
+        const res = await fetch("/api/models/download/status");
+        const tasks = await res.json();
+        const task = tasks[taskId];
+        if (task) {
+            updateDownloaderJobUI(task.status, task.status === "completed" ? "Completed" : task.status === "failed" ? "Failed" : "Exporting...");
+            if (task.error) {
+                dom.downloaderConsoleOutput.innerHTML += `<div style="color: #ff6b6b;">[SYSTEM ERROR] ${escapeHtml(task.error)}</div>\n`;
+                dom.downloaderConsoleOutput.scrollTop = dom.downloaderConsoleOutput.scrollHeight;
+            }
+        }
+    } catch (err) {
+        console.error("Failed to check task status:", err);
+    }
+}
+
+async function handleCancelExport() {
+    const taskId = downloaderState.activeTaskId;
+    if (!taskId) return;
+    
+    dom.downloaderConsoleOutput.innerHTML += `<div style="color: #ffa502;">[SYSTEM] Requesting cancellation...</div>\n`;
+    dom.downloaderConsoleOutput.scrollTop = dom.downloaderConsoleOutput.scrollHeight;
+    
+    try {
+        const res = await fetch(`/api/models/download/cancel/${taskId}`, {
+            method: "POST"
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast("Export process cancelled", "info");
+            if (downloaderState.eventSource) {
+                downloaderState.eventSource.close();
+                downloaderState.eventSource = null;
+            }
+            updateDownloaderJobUI("failed", "Cancelled");
+        } else {
+            showToast(data.message || "Failed to cancel process", "error");
+        }
+    } catch (err) {
+        console.error(err);
+        showToast(`Failed to cancel: ${err.message}`, "error");
     }
 }
