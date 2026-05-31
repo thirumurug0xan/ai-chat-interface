@@ -88,6 +88,8 @@ const dom = {
     // Context popup
     contextPopup: $("#context-popup"),
     contextPopupClose: $("#context-popup-close"),
+    contextPopupMinimize: $("#context-popup-minimize"),
+    contextPopupFullscreen: $("#context-popup-fullscreen"),
     gaugePercent: $("#gauge-percent"),
     gaugeFill: $("#gauge-fill"),
     ctxTokensUsed: $("#ctx-tokens-used"),
@@ -101,10 +103,16 @@ const dom = {
     btnHelp: $("#btn-help"),
     helpModalOverlay: $("#help-modal-overlay"),
     helpModalClose: $("#help-modal-close"),
+    helpModal: $("#help-modal"),
+    helpModalMinimize: $("#help-modal-minimize"),
+    helpModalFullscreen: $("#help-modal-fullscreen"),
     // Settings modal
     btnSettings: $("#btn-settings"),
     settingsModalOverlay: $("#settings-modal-overlay"),
     settingsModalClose: $("#settings-modal-close"),
+    settingsModal: $("#settings-modal"),
+    settingsModalMinimize: $("#settings-modal-minimize"),
+    settingsModalFullscreen: $("#settings-modal-fullscreen"),
     settingDevice: $("#setting-device"),
     settingMaxNewTokens: $("#setting-max-new-tokens"),
     settingMaxNewTokensVal: $("#setting-max-new-tokens-val"),
@@ -120,6 +128,9 @@ const dom = {
     btnSwitchModel: $("#btn-switch-model"),
     modelBrowserOverlay: $("#model-browser-modal-overlay"),
     modelBrowserClose: $("#model-browser-modal-close"),
+    modelBrowserModal: $("#model-browser-modal"),
+    modelBrowserMinimize: $("#model-browser-modal-minimize"),
+    modelBrowserFullscreen: $("#model-browser-modal-fullscreen"),
     btnFsUp: $("#btn-fs-up"),
     btnFsHome: $("#btn-fs-home"),
     btnFsWorkspace: $("#btn-fs-workspace"),
@@ -137,6 +148,9 @@ const dom = {
     btnDownloadModel: $("#btn-download-model"),
     modelDownloaderOverlay: $("#model-downloader-modal-overlay"),
     modelDownloaderClose: $("#model-downloader-modal-close"),
+    modelDownloaderModal: $("#model-downloader-modal"),
+    modelDownloaderMinimize: $("#model-downloader-modal-minimize"),
+    modelDownloaderFullscreen: $("#model-downloader-modal-fullscreen"),
     downloaderSearchInput: $("#downloader-search-input"),
     btnDownloaderSearch: $("#btn-downloader-search"),
     downloaderResultsContainer: $("#downloader-results-container"),
@@ -442,6 +456,9 @@ function initEventListeners() {
     if (dom.btnDownloaderCancel) {
         dom.btnDownloaderCancel.addEventListener("click", handleCancelExport);
     }
+
+    // Modal & Popup Minimize and Fullscreen Event Listeners
+    setupWindowControlsListeners();
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -1444,7 +1461,9 @@ function updateContextWindowUI(used, max) {
 
 // ── Context Popup ─────────────────────────────────────────────────────────
 function toggleContextPopup() {
-    if (dom.contextPopup.classList.contains("visible")) {
+    if (dom.contextWindow && dom.contextWindow.classList.contains("minimized-active")) {
+        openContextPopup();
+    } else if (dom.contextPopup.classList.contains("visible")) {
         closeContextPopup();
     } else {
         openContextPopup();
@@ -1452,6 +1471,7 @@ function toggleContextPopup() {
 }
 
 function openContextPopup() {
+    if (dom.contextWindow) dom.contextWindow.classList.remove("minimized-active");
     dom.contextPopup.classList.add("visible");
     dom.contextWindow.classList.add("active");
 }
@@ -1459,15 +1479,20 @@ function openContextPopup() {
 function closeContextPopup() {
     dom.contextPopup.classList.remove("visible");
     dom.contextWindow.classList.remove("active");
+    if (dom.contextWindow) dom.contextWindow.classList.remove("minimized-active");
+    if (dom.contextPopup) dom.contextPopup.classList.remove("fullscreen");
 }
 
 // ── Help Modal ────────────────────────────────────────────────────────────
 function openHelpModal() {
+    if (dom.btnHelp) dom.btnHelp.classList.remove("minimized-active");
     dom.helpModalOverlay.classList.add("visible");
 }
 
 function closeHelpModal() {
     dom.helpModalOverlay.classList.remove("visible");
+    if (dom.btnHelp) dom.btnHelp.classList.remove("minimized-active");
+    if (dom.helpModal) dom.helpModal.classList.remove("fullscreen");
 }
 
 // ── SVG Gradient for Gauge ───────────────────────────────────────────────
@@ -1499,6 +1524,7 @@ function initSVGGradient() {
 
 // ── Settings Modal ────────────────────────────────────────────────────────
 function openSettingsModal() {
+    if (dom.btnSettings) dom.btnSettings.classList.remove("minimized-active");
     if (state.modelConfig) {
         if (dom.settingDevice) {
             dom.settingDevice.value = state.modelConfig.requested_device || "AUTO";
@@ -1520,6 +1546,8 @@ function openSettingsModal() {
 
 function closeSettingsModal() {
     dom.settingsModalOverlay.classList.remove("visible");
+    if (dom.btnSettings) dom.btnSettings.classList.remove("minimized-active");
+    if (dom.settingsModal) dom.settingsModal.classList.remove("fullscreen");
 }
 
 async function saveSettings() {
@@ -1758,6 +1786,7 @@ function handleExport() {
 // ── Model Filesystem Explorer Modal ──────────────────────────────────────
 
 function openModelBrowserModal() {
+    if (dom.btnSwitchModel) dom.btnSwitchModel.classList.remove("minimized-active");
     if (state.modelConfig && state.modelConfig.model_path) {
         fsState.currentPath = state.modelConfig.model_path;
     } else {
@@ -1790,6 +1819,8 @@ function closeModelBrowserModal() {
     if (dom.modelBrowserOverlay) {
         dom.modelBrowserOverlay.classList.remove("visible");
     }
+    if (dom.btnSwitchModel) dom.btnSwitchModel.classList.remove("minimized-active");
+    if (dom.modelBrowserModal) dom.modelBrowserModal.classList.remove("fullscreen");
 }
 
 async function renderRootTree() {
@@ -2137,6 +2168,7 @@ async function loadModelFromPath() {
 // ── Model Downloader Functions ──────────────────────────────────────────────
 
 function openModelDownloaderModal() {
+    if (dom.btnDownloadModel) dom.btnDownloadModel.classList.remove("minimized-active");
     dom.modelDownloaderOverlay.classList.add("visible");
     // Check if there is an active running download on the server to resume monitoring
     checkActiveDownloadsAndResume();
@@ -2144,6 +2176,8 @@ function openModelDownloaderModal() {
 
 function closeModelDownloaderModal() {
     dom.modelDownloaderOverlay.classList.remove("visible");
+    if (dom.btnDownloadModel) dom.btnDownloadModel.classList.remove("minimized-active");
+    if (dom.modelDownloaderModal) dom.modelDownloaderModal.classList.remove("fullscreen");
 }
 
 async function checkActiveDownloadsAndResume() {
@@ -2482,5 +2516,81 @@ async function handleCancelExport() {
     } catch (err) {
         console.error(err);
         showToast(`Failed to cancel: ${err.message}`, "error");
+    }
+}
+
+// ── Window Controls Helpers (macOS style Minimize & Fullscreen) ──────────────────
+
+function setupWindowControlsListeners() {
+    // Settings Modal
+    if (dom.settingsModalMinimize) {
+        dom.settingsModalMinimize.addEventListener("click", () => minimizeWindow("settings"));
+    }
+    if (dom.settingsModalFullscreen) {
+        dom.settingsModalFullscreen.addEventListener("click", () => toggleFullscreen("settings"));
+    }
+
+    // Help Modal
+    if (dom.helpModalMinimize) {
+        dom.helpModalMinimize.addEventListener("click", () => minimizeWindow("help"));
+    }
+    if (dom.helpModalFullscreen) {
+        dom.helpModalFullscreen.addEventListener("click", () => toggleFullscreen("help"));
+    }
+
+    // Model Browser Modal
+    if (dom.modelBrowserMinimize) {
+        dom.modelBrowserMinimize.addEventListener("click", () => minimizeWindow("model-browser"));
+    }
+    if (dom.modelBrowserFullscreen) {
+        dom.modelBrowserFullscreen.addEventListener("click", () => toggleFullscreen("model-browser"));
+    }
+
+    // Model Downloader Modal
+    if (dom.modelDownloaderMinimize) {
+        dom.modelDownloaderMinimize.addEventListener("click", () => minimizeWindow("model-downloader"));
+    }
+    if (dom.modelDownloaderFullscreen) {
+        dom.modelDownloaderFullscreen.addEventListener("click", () => toggleFullscreen("model-downloader"));
+    }
+
+    // Context Popup
+    if (dom.contextPopupMinimize) {
+        dom.contextPopupMinimize.addEventListener("click", () => minimizeWindow("context"));
+    }
+    if (dom.contextPopupFullscreen) {
+        dom.contextPopupFullscreen.addEventListener("click", () => toggleFullscreen("context"));
+    }
+}
+
+function minimizeWindow(type) {
+    if (type === "settings") {
+        closeSettingsModal();
+        if (dom.btnSettings) dom.btnSettings.classList.add("minimized-active");
+    } else if (type === "help") {
+        closeHelpModal();
+        if (dom.btnHelp) dom.btnHelp.classList.add("minimized-active");
+    } else if (type === "model-browser") {
+        closeModelBrowserModal();
+        if (dom.btnSwitchModel) dom.btnSwitchModel.classList.add("minimized-active");
+    } else if (type === "model-downloader") {
+        closeModelDownloaderModal();
+        if (dom.btnDownloadModel) dom.btnDownloadModel.classList.add("minimized-active");
+    } else if (type === "context") {
+        closeContextPopup();
+        if (dom.contextWindow) dom.contextWindow.classList.add("minimized-active");
+    }
+}
+
+function toggleFullscreen(type) {
+    let el = null;
+    if (type === "settings") el = dom.settingsModal;
+    else if (type === "help") el = dom.helpModal;
+    else if (type === "model-browser") el = dom.modelBrowserModal;
+    else if (type === "model-downloader") el = dom.modelDownloaderModal;
+    else if (type === "context") el = dom.contextPopup;
+
+    if (el) {
+        el.classList.toggle("fullscreen");
     }
 }
