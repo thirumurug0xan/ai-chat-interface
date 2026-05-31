@@ -1885,34 +1885,6 @@ body {
     font-size: 14px;
 }
 
-.context-popup-close {
-    position: absolute;
-    left: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background-color: #ff5f56;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    color: transparent;
-    cursor: pointer;
-    font-size: 8px;
-    font-weight: 700;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: all var(--transition-fast);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-.context-popup-close:hover {
-    background-color: #ff5f56;
-    color: #4c0000;
-}
-
 .context-popup-body {
     padding: 18px;
 }
@@ -2214,19 +2186,26 @@ body {
     font-size: 15px;
 }
 
-.modal-close {
+/* macOS Window Controls */
+.window-controls {
     position: absolute;
     left: 16px;
     top: 50%;
     transform: translateY(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    z-index: 10;
+}
+
+.control-btn {
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background-color: #ff5f56;
-    border: 1px solid rgba(0, 0, 0, 0.12);
-    color: transparent;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    color: transparent !important;
     cursor: pointer;
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 700;
     line-height: 1;
     display: flex;
@@ -2235,11 +2214,97 @@ body {
     padding: 0;
     transition: all var(--transition-fast);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    position: relative;
+    outline: none;
 }
 
-.modal-close:hover {
+.control-btn.btn-close {
     background-color: #ff5f56;
-    color: #4c0000;
+}
+
+.control-btn.btn-minimize {
+    background-color: #ffbd2e;
+}
+
+.control-btn.btn-fullscreen {
+    background-color: #27c93f;
+}
+
+/* Hover effect: show symbols on all buttons inside controls group */
+.window-controls:hover .control-btn.btn-close {
+    color: #4c0000 !important;
+}
+
+.window-controls:hover .control-btn.btn-minimize {
+    color: #5c3e00 !important;
+}
+
+.window-controls:hover .control-btn.btn-fullscreen {
+    color: #004d00 !important;
+}
+
+/* Fullscreen mode */
+.modal.fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 1000 !important;
+}
+
+.context-popup.fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    z-index: 1000 !important;
+}
+
+/* Minimized launcher button status indicator dot */
+.btn-header-action.minimized-active::after,
+.btn-help.minimized-active::after,
+.btn-switch-model.minimized-active::after,
+.btn-download-model.minimized-active::after,
+.context-window.minimized-active::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    background-color: #ffbd2e; /* macOS Minimize Yellow */
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 6px #ffbd2e;
+    z-index: 10;
+    pointer-events: none;
+    animation: pulse-minimized 2s infinite;
+}
+
+.btn-switch-model, .btn-download-model {
+    position: relative;
+}
+
+@keyframes pulse-minimized {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 4px #ffbd2e;
+    }
+    50% {
+        transform: scale(1.2);
+        box-shadow: 0 0 10px #ffbd2e;
+    }
 }
 
 .modal-body {
