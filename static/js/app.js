@@ -106,6 +106,8 @@ const dom = {
     helpModal: $("#help-modal"),
     helpModalMinimize: $("#help-modal-minimize"),
     helpModalFullscreen: $("#help-modal-fullscreen"),
+    // Theme toggle
+    btnTheme: $("#btn-theme"),
     // Settings modal
     btnSettings: $("#btn-settings"),
     settingsModalOverlay: $("#settings-modal-overlay"),
@@ -167,10 +169,18 @@ const dom = {
     btnDownloaderCancel: $("#btn-downloader-cancel"),
     btnDownloaderClose: $("#btn-downloader-close"),
     btnDownloaderStart: $("#btn-downloader-start"),
+    // Sidebar search
+    sidebarSearch: $("#sidebar-search"),
+    sidebarSearchClear: $("#sidebar-search-clear"),
+    // Command palette
+    paletteOverlay: $("#palette-overlay"),
+    paletteSearchInput: $("#palette-search-input"),
+    paletteResults: $("#palette-results"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
+    initTheme();
     loadState();
     initEventListeners();
     fetchConfig();
@@ -231,14 +241,25 @@ function initEventListeners() {
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
+        // Ctrl+K or Cmd+K — Command Palette
+        if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+            e.preventDefault();
+            togglePalette();
+            return;
+        }
+
         // Ctrl+N — new chat
         if ((e.ctrlKey || e.metaKey) && e.key === "n") {
             e.preventDefault();
             createNewConversation();
         }
 
-        // Esc — close popups and modals
+        // Esc — close popups, modals and command palette
         if (e.key === "Escape") {
+            if (paletteState.isOpen) {
+                closePalette();
+                return;
+            }
             closeContextPopup();
             closeHelpModal();
             closeSettingsModal();
@@ -246,8 +267,8 @@ function initEventListeners() {
             closeModelDownloaderModal();
         }
 
-        // ? — open help (only when not typing in input)
-        if (e.key === "?" && document.activeElement !== dom.chatInput) {
+        // ? — open help (only when not typing in inputs)
+        if (e.key === "?" && document.activeElement !== dom.chatInput && document.activeElement !== dom.sidebarSearch && document.activeElement !== dom.paletteSearchInput) {
             e.preventDefault();
             openHelpModal();
         }
@@ -459,6 +480,64 @@ function initEventListeners() {
 
     // Modal & Popup Minimize and Fullscreen Event Listeners
     setupWindowControlsListeners();
+
+    // Theme toggle listener
+    if (dom.btnTheme) {
+        dom.btnTheme.addEventListener("click", toggleTheme);
+    }
+
+    // Sidebar search listeners
+    if (dom.sidebarSearch) {
+        dom.sidebarSearch.addEventListener("input", (e) => {
+            const query = e.target.value.trim();
+            if (dom.sidebarSearchClear) {
+                dom.sidebarSearchClear.style.display = query ? "block" : "none";
+            }
+            renderConversationList();
+        });
+    }
+
+    if (dom.sidebarSearchClear) {
+        dom.sidebarSearchClear.addEventListener("click", () => {
+            if (dom.sidebarSearch) {
+                dom.sidebarSearch.value = "";
+            }
+            dom.sidebarSearchClear.style.display = "none";
+            renderConversationList();
+        });
+    }
+
+    // Command palette overlay click to close
+    if (dom.paletteOverlay) {
+        dom.paletteOverlay.addEventListener("click", (e) => {
+            if (e.target === dom.paletteOverlay) {
+                closePalette();
+            }
+        });
+    }
+
+    // Command palette search input event
+    if (dom.paletteSearchInput) {
+        dom.paletteSearchInput.addEventListener("input", () => {
+            renderPaletteResults();
+        });
+
+        dom.paletteSearchInput.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                navigatePalette(1);
+            } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                navigatePalette(-1);
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                selectActivePaletteItem();
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                closePalette();
+            }
+        });
+    }
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -805,14 +884,31 @@ function renderConversationList() {
     const list = dom.conversationList;
     list.innerHTML = "";
 
-    if (state.conversations.length === 0) {
+    const searchQuery = dom.sidebarSearch ? dom.sidebarSearch.value.toLowerCase().trim() : "";
+
+    const filteredConversations = state.conversations.filter((conv) => {
+        if (!searchQuery) return true;
+        // Check title
+        if (conv.title.toLowerCase().includes(searchQuery)) return true;
+        // Check message contents
+        return conv.messages.some((msg) => msg.content.toLowerCase().includes(searchQuery));
+    });
+
+    if (filteredConversations.length === 0) {
+        if (state.conversations.length === 0) {
+            dom.emptyConversations.querySelector(".empty-icon").textContent = "💬";
+            dom.emptyConversations.querySelector("div:last-child").textContent = "No conversations yet";
+        } else {
+            dom.emptyConversations.querySelector(".empty-icon").textContent = "🔍";
+            dom.emptyConversations.querySelector("div:last-child").textContent = "No matches found";
+        }
         dom.emptyConversations.style.display = "block";
         return;
     }
 
     dom.emptyConversations.style.display = "none";
 
-    state.conversations.forEach((conv) => {
+    filteredConversations.forEach((conv) => {
         const li = document.createElement("li");
         li.className = `conversation-item ${conv.id === state.activeConversationId ? "active" : ""}`;
         li.innerHTML = `
@@ -2592,5 +2688,232 @@ function toggleFullscreen(type) {
 
     if (el) {
         el.classList.toggle("fullscreen");
+    }
+}
+
+// ── Theme Management (Light / Dark mode) ───────────────────────────────────
+
+function initTheme() {
+    const savedTheme = localStorage.getItem("theme") || "dark";
+    if (savedTheme === "light") {
+        document.body.classList.add("light-theme");
+        updateThemeToggleUI("light");
+    } else {
+        document.body.classList.remove("light-theme");
+        updateThemeToggleUI("dark");
+    }
+}
+
+function toggleTheme() {
+    if (document.body.classList.contains("light-theme")) {
+        document.body.classList.remove("light-theme");
+        localStorage.setItem("theme", "dark");
+        updateThemeToggleUI("dark");
+        showToast("Switched to dark mode", "info");
+    } else {
+        document.body.classList.add("light-theme");
+        localStorage.setItem("theme", "light");
+        updateThemeToggleUI("light");
+        showToast("Switched to light mode", "info");
+    }
+}
+
+function updateThemeToggleUI(theme) {
+    const btn = document.getElementById("btn-theme");
+    if (!btn) return;
+    if (theme === "light") {
+        btn.querySelector(".header-action-icon").textContent = "☀️";
+        btn.title = "Switch to Dark Mode";
+    } else {
+        btn.querySelector(".header-action-icon").textContent = "🌙";
+        btn.title = "Switch to Light Mode";
+    }
+}
+
+// ── Command Palette Management ──────────────────────────────────────────────
+
+const paletteState = {
+    isOpen: false,
+    selectedIndex: 0,
+    items: [],
+};
+
+const COMMANDS = [
+    { id: "new-chat", title: "New Chat", icon: "💬", shortcut: "Ctrl+N", action: () => createNewConversation() },
+    { id: "open-settings", title: "Open Settings", icon: "⚙️", shortcut: "", action: () => openSettingsModal() },
+    { id: "open-help", title: "Open Help & Features", icon: "📖", shortcut: "?", action: () => openHelpModal() },
+    { id: "switch-model", title: "Switch Active Model", icon: "📁", shortcut: "", action: () => openModelBrowserModal() },
+    { id: "download-model", title: "Download Model", icon: "📥", shortcut: "", action: () => openModelDownloaderModal() },
+    { id: "toggle-theme", title: "Toggle Theme (Light / Dark)", icon: "🌓", shortcut: "", action: () => toggleTheme() },
+    { id: "clear-chat", title: "Clear current conversation", icon: "🧹", shortcut: "", action: () => clearCurrentChat() },
+];
+
+function openPalette() {
+    if (dom.paletteOverlay) {
+        dom.paletteOverlay.classList.add("visible");
+    }
+    paletteState.isOpen = true;
+    paletteState.selectedIndex = 0;
+    if (dom.paletteSearchInput) {
+        dom.paletteSearchInput.value = "";
+    }
+    renderPaletteResults();
+    setTimeout(() => {
+        if (dom.paletteSearchInput) {
+            dom.paletteSearchInput.focus();
+        }
+    }, 50);
+}
+
+function closePalette() {
+    if (dom.paletteOverlay) {
+        dom.paletteOverlay.classList.remove("visible");
+    }
+    paletteState.isOpen = false;
+}
+
+function togglePalette() {
+    if (paletteState.isOpen) {
+        closePalette();
+    } else {
+        openPalette();
+    }
+}
+
+function renderPaletteResults() {
+    const query = dom.paletteSearchInput ? dom.paletteSearchInput.value.toLowerCase().trim() : "";
+    const container = dom.paletteResults;
+    if (!container) return;
+    container.innerHTML = "";
+
+    paletteState.items = [];
+
+    // Filter commands
+    const matchingCommands = COMMANDS.filter(cmd => cmd.title.toLowerCase().includes(query));
+    matchingCommands.forEach(cmd => {
+        paletteState.items.push({ type: "command", data: cmd });
+    });
+
+    // Filter conversations
+    const matchingConversations = state.conversations.filter(conv => conv.title.toLowerCase().includes(query));
+    matchingConversations.forEach(conv => {
+        paletteState.items.push({ type: "conversation", data: conv });
+    });
+
+    if (paletteState.items.length === 0) {
+        container.innerHTML = `
+            <div class="palette-results-empty">
+                <span class="palette-empty-icon">🔍</span>
+                <div>No results found for "${escapeHtml(query)}"</div>
+            </div>
+        `;
+        return;
+    }
+
+    // Keep selected index in bounds
+    if (paletteState.selectedIndex >= paletteState.items.length) {
+        paletteState.selectedIndex = 0;
+    } else if (paletteState.selectedIndex < 0) {
+        paletteState.selectedIndex = paletteState.items.length - 1;
+    }
+
+    // Render results
+    let currentIdx = 0;
+
+    if (matchingCommands.length > 0) {
+        const header = document.createElement("div");
+        header.className = "palette-section-header";
+        header.textContent = "Commands";
+        container.appendChild(header);
+
+        matchingCommands.forEach(cmd => {
+            const el = document.createElement("div");
+            const isSelected = currentIdx === paletteState.selectedIndex;
+            el.className = `palette-item ${isSelected ? "active" : ""}`;
+            el.innerHTML = `
+                <span class="palette-item-icon">${cmd.icon}</span>
+                <span class="palette-item-text">${escapeHtml(cmd.title)}</span>
+                ${cmd.shortcut ? `<span class="palette-item-shortcut">${cmd.shortcut}</span>` : ""}
+            `;
+            const thisIdx = currentIdx;
+            el.addEventListener("click", () => {
+                paletteState.selectedIndex = thisIdx;
+                selectActivePaletteItem();
+            });
+            container.appendChild(el);
+            currentIdx++;
+        });
+    }
+
+    if (matchingConversations.length > 0) {
+        const header = document.createElement("div");
+        header.className = "palette-section-header";
+        header.textContent = "Conversations";
+        container.appendChild(header);
+
+        matchingConversations.forEach(conv => {
+            const el = document.createElement("div");
+            const isSelected = currentIdx === paletteState.selectedIndex;
+            el.className = `palette-item ${isSelected ? "active" : ""}`;
+            el.innerHTML = `
+                <span class="palette-item-icon">💬</span>
+                <span class="palette-item-text">${escapeHtml(conv.title)}</span>
+            `;
+            const thisIdx = currentIdx;
+            el.addEventListener("click", () => {
+                paletteState.selectedIndex = thisIdx;
+                selectActivePaletteItem();
+            });
+            container.appendChild(el);
+            currentIdx++;
+        });
+    }
+}
+
+function updateActivePaletteItem() {
+    if (!dom.paletteResults) return;
+    const items = dom.paletteResults.querySelectorAll(".palette-item");
+    items.forEach((el, idx) => {
+        if (idx === paletteState.selectedIndex) {
+            el.classList.add("active");
+            el.scrollIntoView({ block: "nearest" });
+        } else {
+            el.classList.remove("active");
+        }
+    });
+}
+
+function navigatePalette(dir) {
+    if (paletteState.items.length === 0) return;
+    paletteState.selectedIndex = (paletteState.selectedIndex + dir + paletteState.items.length) % paletteState.items.length;
+    updateActivePaletteItem();
+}
+
+function selectActivePaletteItem() {
+    const activeItem = paletteState.items[paletteState.selectedIndex];
+    if (activeItem) {
+        triggerPaletteItem(activeItem);
+    }
+}
+
+function triggerPaletteItem(item) {
+    closePalette();
+    if (item.type === "command") {
+        item.data.action();
+    } else if (item.type === "conversation") {
+        switchConversation(item.data.id);
+    }
+}
+
+function clearCurrentChat() {
+    const conv = getActiveConversation();
+    if (conv) {
+        conv.messages = [];
+        saveState();
+        renderActiveConversation();
+        updateContextWindowUI(0, state.maxInputTokens);
+        showToast("Conversation cleared", "info");
+    } else {
+        showToast("No active conversation to clear", "warning");
     }
 }

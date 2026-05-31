@@ -32,6 +32,10 @@
                 <!-- Conversations section — gets most of the space -->
                 <div class="sidebar-section sidebar-section-conversations">
                     <div class="sidebar-section-title">Conversations</div>
+                    <div class="sidebar-search-wrapper">
+                        <input type="text" id="sidebar-search" placeholder="Search chats..." title="Search chat titles and messages" autocomplete="off">
+                        <span class="sidebar-search-clear" id="sidebar-search-clear" style="display: none;">✕</span>
+                    </div>
                     <ul class="conversation-list" id="conversation-list">
                         <!-- Populated dynamically -->
                     </ul>
@@ -207,6 +211,9 @@
                         <div class="status-dot loading" id="status-dot"></div>
                         <span id="status-text">Connecting...</span>
                     </div>
+                    <button class="btn-header-action" id="btn-theme" title="Switch to Light Mode">
+                        <span class="header-action-icon">🌙</span>
+                    </button>
                     <button class="btn-header-action" id="btn-export" title="Export conversation as JSON">
                         <span class="header-action-icon">📥</span>
                     </button>
@@ -775,6 +782,20 @@
 
     <!-- Toast container -->
     <div class="toast-container" id="toast-container"></div></div>
+
+    <!-- Command Palette Modal -->
+    <div class="palette-overlay" id="palette-overlay">
+        <div class="palette-window" id="palette-window">
+            <div class="palette-search-wrapper">
+                <span class="palette-search-icon">🔍</span>
+                <input type="text" id="palette-search-input" placeholder="Type a command or search conversations..." autocomplete="off">
+                <span class="palette-shortcut-hint">ESC to close</span>
+            </div>
+            <div class="palette-results" id="palette-results">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+    </div>
 
     <script src="/static/js/app.js"></script>
 </body>
