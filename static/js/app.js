@@ -2053,4 +2053,3 @@ async function loadModelFromPath() {
         if (dom.btnFsCancel) dom.btnFsCancel.disabled = false;
     }
 }
-}
