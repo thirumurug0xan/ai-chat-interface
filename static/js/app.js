@@ -16,6 +16,16 @@ const state = {
     maxInputTokens: 1024,       // context window size from config
 };
 
+const fsState = {
+    currentPath: "",
+    parentPath: "",
+    workspacePath: "",
+    homePath: "",
+    selectedPath: "",
+    expandedPaths: new Set(),
+    treeDataCache: new Map(),
+};
+
 // ── DOM References ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -100,6 +110,23 @@ const dom = {
     deviceSwitchingText: $("#device-switching-text"),
     // Export
     btnExport: $("#btn-export"),
+    // Model Filesystem Explorer Modal
+    btnSwitchModel: $("#btn-switch-model"),
+    modelBrowserOverlay: $("#model-browser-modal-overlay"),
+    modelBrowserClose: $("#model-browser-modal-close"),
+    btnFsUp: $("#btn-fs-up"),
+    btnFsHome: $("#btn-fs-home"),
+    btnFsWorkspace: $("#btn-fs-workspace"),
+    btnFsRoot: $("#btn-fs-root"),
+    fsPathInput: $("#fs-path-input"),
+    btnFsGo: $("#btn-fs-go"),
+    fsExplorerTree: $("#fs-explorer-tree"),
+    fsItemDetails: $("#fs-item-details"),
+    fsSelectedPath: $("#fs-selected-path"),
+    btnFsCancel: $("#btn-fs-cancel"),
+    btnFsConfirm: $("#btn-fs-confirm"),
+    modelSwitchingOverlay: $("#model-switching-overlay"),
+    modelSwitchingTitle: $("#model-switching-title"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -175,6 +202,7 @@ function initEventListeners() {
             closeContextPopup();
             closeHelpModal();
             closeSettingsModal();
+            closeModelBrowserModal();
         }
 
         // ? — open help (only when not typing in input)
@@ -259,6 +287,80 @@ function initEventListeners() {
     // Export button
     if (dom.btnExport) {
         dom.btnExport.addEventListener("click", handleExport);
+    }
+
+    // Switch Model button
+    if (dom.btnSwitchModel) {
+        dom.btnSwitchModel.addEventListener("click", openModelBrowserModal);
+    }
+
+    // Model Browser Modal Close & Cancel
+    if (dom.modelBrowserClose) {
+        dom.modelBrowserClose.addEventListener("click", closeModelBrowserModal);
+    }
+    if (dom.btnFsCancel) {
+        dom.btnFsCancel.addEventListener("click", closeModelBrowserModal);
+    }
+    if (dom.modelBrowserOverlay) {
+        dom.modelBrowserOverlay.addEventListener("click", (e) => {
+            if (e.target === dom.modelBrowserOverlay) closeModelBrowserModal();
+        });
+    }
+
+    // File Explorer Path Navigation Shortcuts
+    if (dom.btnFsUp) {
+        dom.btnFsUp.addEventListener("click", () => {
+            if (fsState.parentPath && fsState.parentPath !== fsState.currentPath) {
+                fsState.currentPath = fsState.parentPath;
+                renderRootTree();
+            }
+        });
+    }
+    if (dom.btnFsHome) {
+        dom.btnFsHome.addEventListener("click", () => {
+            if (fsState.homePath) {
+                fsState.currentPath = fsState.homePath;
+                renderRootTree();
+            }
+        });
+    }
+    if (dom.btnFsWorkspace) {
+        dom.btnFsWorkspace.addEventListener("click", () => {
+            if (fsState.workspacePath) {
+                fsState.currentPath = fsState.workspacePath;
+                renderRootTree();
+            }
+        });
+    }
+    if (dom.btnFsRoot) {
+        dom.btnFsRoot.addEventListener("click", () => {
+            fsState.currentPath = "/";
+            renderRootTree();
+        });
+    }
+
+    // Path Input execution
+    if (dom.btnFsGo) {
+        dom.btnFsGo.addEventListener("click", () => {
+            const val = dom.fsPathInput.value.trim();
+            if (val) {
+                fsState.currentPath = val;
+                renderRootTree();
+            }
+        });
+    }
+    if (dom.fsPathInput) {
+        dom.fsPathInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                dom.btnFsGo.click();
+            }
+        });
+    }
+
+    // Confirm selection (Load Model)
+    if (dom.btnFsConfirm) {
+        dom.btnFsConfirm.addEventListener("click", loadModelFromPath);
     }
 }
 
@@ -1571,4 +1673,384 @@ function handleExport() {
     URL.revokeObjectURL(url);
 
     showToast("Conversation exported!", "success");
+}
+
+// ── Model Filesystem Explorer Modal ──────────────────────────────────────
+
+function openModelBrowserModal() {
+    if (state.modelConfig && state.modelConfig.model_path) {
+        fsState.currentPath = state.modelConfig.model_path;
+    } else {
+        fsState.currentPath = "";
+    }
+
+    fsState.selectedPath = "";
+    fsState.expandedPaths.clear();
+    fsState.treeDataCache.clear();
+
+    if (dom.fsSelectedPath) dom.fsSelectedPath.textContent = "—";
+    if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = true;
+
+    if (dom.fsItemDetails) {
+        dom.fsItemDetails.innerHTML = `
+            <div class="fs-details-empty">
+                <span class="fs-details-empty-icon">📁</span>
+                <div>Select a folder in the explorer tree on the left to see details.</div>
+            </div>
+        `;
+    }
+
+    if (dom.modelBrowserOverlay) {
+        dom.modelBrowserOverlay.classList.add("visible");
+    }
+    renderRootTree();
+}
+
+function closeModelBrowserModal() {
+    if (dom.modelBrowserOverlay) {
+        dom.modelBrowserOverlay.classList.remove("visible");
+    }
+}
+
+async function renderRootTree() {
+    if (!dom.fsExplorerTree) return;
+    
+    dom.fsExplorerTree.innerHTML = `
+        <div class="fs-tree-loading">
+            <div class="device-switching-spinner" style="margin: 0 auto 10px;"></div>
+            Loading file system...
+        </div>
+    `;
+
+    try {
+        const res = await fetch("/api/fs/list", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: fsState.currentPath })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json();
+        fsState.currentPath = data.current_path;
+        fsState.parentPath = data.parent_path;
+        fsState.workspacePath = data.workspace_path;
+        fsState.homePath = data.home_path;
+
+        if (dom.fsPathInput) {
+            dom.fsPathInput.value = data.current_path;
+        }
+
+        dom.fsExplorerTree.innerHTML = "";
+
+        if (data.entries.length === 0) {
+            dom.fsExplorerTree.innerHTML = `<div class="fs-tree-empty">Empty directory</div>`;
+            return;
+        }
+
+        fsState.treeDataCache.set(data.current_path, data.entries);
+
+        data.entries.forEach(entry => {
+            const node = renderTreeNode(entry, 0);
+            dom.fsExplorerTree.appendChild(node);
+        });
+    } catch (err) {
+        console.error(err);
+        dom.fsExplorerTree.innerHTML = `
+            <div class="fs-tree-empty" style="color: #ff6b6b; text-align: center; padding: 20px;">
+                ⚠️ Error: ${escapeHtml(err.message)}
+            </div>
+        `;
+    }
+}
+
+function renderTreeNode(entry, level) {
+    const isExpanded = fsState.expandedPaths.has(entry.path);
+    const hasChildren = entry.is_dir;
+
+    const nodeWrapper = document.createElement("div");
+    nodeWrapper.className = "fs-tree-node-wrapper";
+    nodeWrapper.dataset.path = entry.path;
+
+    let chevronHtml = "";
+    if (hasChildren) {
+        chevronHtml = `<span class="fs-chevron ${isExpanded ? 'expanded' : ''}">▶</span>`;
+    } else {
+        chevronHtml = `<span class="fs-chevron hidden">▶</span>`;
+    }
+
+    let icon = "📄";
+    if (entry.is_dir) {
+        icon = entry.is_model ? "🧠" : "📁";
+    }
+
+    const nodeHeader = document.createElement("div");
+    nodeHeader.className = `fs-tree-node ${fsState.selectedPath === entry.path ? 'selected' : ''}`;
+    nodeHeader.style.paddingLeft = `${level * 12 + 6}px`;
+    nodeHeader.innerHTML = `
+        ${chevronHtml}
+        <span class="fs-icon">${icon}</span>
+        <span class="fs-node-name">${escapeHtml(entry.name)}</span>
+    `;
+
+    nodeWrapper.appendChild(nodeHeader);
+
+    nodeHeader.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectFsItem(entry);
+
+        const clickedChevron = e.target.classList.contains("fs-chevron");
+        if (entry.is_dir && (!clickedChevron || isExpanded)) {
+            toggleFolderExpand(entry.path, nodeWrapper, level + 1);
+        }
+    });
+
+    if (isExpanded && hasChildren) {
+        const childrenDiv = document.createElement("div");
+        childrenDiv.className = "fs-tree-children";
+        nodeWrapper.appendChild(childrenDiv);
+        loadAndRenderChildren(entry.path, childrenDiv, level + 1);
+    }
+
+    return nodeWrapper;
+}
+
+async function toggleFolderExpand(path, nodeWrapper, nextLevel) {
+    const isExpanded = fsState.expandedPaths.has(path);
+    const nodeHeader = nodeWrapper.querySelector(".fs-tree-node");
+    const chevron = nodeHeader ? nodeHeader.querySelector(".fs-chevron") : null;
+
+    if (isExpanded) {
+        fsState.expandedPaths.delete(path);
+        if (chevron) chevron.classList.remove("expanded");
+        const childrenDiv = nodeWrapper.querySelector(".fs-tree-children");
+        if (childrenDiv) childrenDiv.remove();
+    } else {
+        fsState.expandedPaths.add(path);
+        if (chevron) chevron.classList.add("expanded");
+
+        const childrenDiv = document.createElement("div");
+        childrenDiv.className = "fs-tree-children";
+        nodeWrapper.appendChild(childrenDiv);
+
+        await loadAndRenderChildren(path, childrenDiv, nextLevel);
+    }
+}
+
+async function loadAndRenderChildren(path, containerEl, level) {
+    containerEl.innerHTML = `<div class="fs-tree-loading" style="padding: 6px 12px; font-size: 11px; text-align: left;">Loading...</div>`;
+
+    try {
+        let entries = fsState.treeDataCache.get(path);
+        if (!entries) {
+            const res = await fetch("/api/fs/list", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: path })
+            });
+            if (!res.ok) throw new Error("Failed to load sub-directory");
+            const data = await res.json();
+            entries = data.entries;
+            fsState.treeDataCache.set(path, entries);
+        }
+
+        containerEl.innerHTML = "";
+        if (entries.length === 0) {
+            containerEl.innerHTML = `<div class="fs-tree-empty" style="padding-left: ${level * 12 + 6}px;">(empty folder)</div>`;
+            return;
+        }
+
+        entries.forEach(entry => {
+            const childNode = renderTreeNode(entry, level);
+            containerEl.appendChild(childNode);
+        });
+    } catch (err) {
+        console.error(err);
+        containerEl.innerHTML = `<div class="fs-tree-empty" style="color: #ff6b6b; padding-left: ${level * 12 + 6}px;">⚠️ Error loading</div>`;
+    }
+}
+
+function selectFsItem(entry) {
+    fsState.selectedPath = entry.path;
+    if (dom.fsSelectedPath) {
+        dom.fsSelectedPath.textContent = entry.path;
+    }
+
+    if (dom.fsExplorerTree) {
+        const allNodes = dom.fsExplorerTree.querySelectorAll(".fs-tree-node");
+        allNodes.forEach(node => {
+            const wrapper = node.closest(".fs-tree-node-wrapper");
+            if (wrapper && wrapper.dataset.path === entry.path) {
+                node.classList.add("selected");
+            } else {
+                node.classList.remove("selected");
+            }
+        });
+    }
+
+    renderDetailsPane(entry);
+}
+
+async function renderDetailsPane(entry) {
+    const pane = dom.fsItemDetails;
+    if (!pane) return;
+
+    pane.innerHTML = `<div class="fs-tree-loading" style="padding: 10px;">Reading folder details...</div>`;
+
+    if (!entry.is_dir) {
+        pane.innerHTML = `
+            <div class="fs-details-card">
+                <div class="fs-details-title">${escapeHtml(entry.name)}</div>
+                <div class="fs-details-path">${escapeHtml(entry.path)}</div>
+                <div class="fs-model-badge invalid">📄 File</div>
+                <div style="font-size: 12px; color: var(--text-tertiary); line-height: 1.6; margin-top: 10px;">
+                    This is a file. OpenVINO models are loaded from directories. Please select the folder containing the model files.
+                </div>
+            </div>
+        `;
+        if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = true;
+        return;
+    }
+
+    try {
+        let entries = fsState.treeDataCache.get(entry.path);
+        if (!entries) {
+            const res = await fetch("/api/fs/list", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: entry.path })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                entries = data.entries;
+                fsState.treeDataCache.set(entry.path, entries);
+            }
+        }
+
+        const filesList = entries || [];
+        const xmlFiles = filesList.filter(f => !f.is_dir && f.name.endsWith(".xml"));
+        const hasXmlModel = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "openvino_model.xml");
+        const isValidModel = xmlFiles.length > 0 || hasXmlModel;
+
+        let badgeHtml = "";
+        let warningHtml = "";
+        if (isValidModel) {
+            badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
+            if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+        } else {
+            badgeHtml = `<div class="fs-model-badge invalid">⚠️ Regular Folder</div>`;
+            warningHtml = `
+                <div style="font-size: 11.5px; color: #ffa502; line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 165, 2, 0.05); border: 1px solid rgba(255, 165, 2, 0.15); border-radius: 6px;">
+                    <strong>Note:</strong> No model XML files detected in this folder. Loading it as a model path might fail unless it contains valid config/model files.
+                </div>
+            `;
+            if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+        }
+
+        let filesHtml = "";
+        if (filesList.length > 0) {
+            filesHtml = `
+                <div style="margin-top: 15px;">
+                    <div class="fs-files-list-title">Folder Contents (${filesList.length} items):</div>
+                    <div class="fs-files-list">
+            `;
+            filesList.forEach(f => {
+                const isModelCore = !f.is_dir && (f.name.endsWith(".xml") || f.name.endsWith(".bin") || f.name.endsWith(".json"));
+                const icon = f.is_dir ? "📁" : "📄";
+                filesHtml += `
+                    <div class="fs-file-item ${isModelCore ? 'model-core' : ''}">
+                        <span>${icon} ${escapeHtml(f.name)}</span>
+                        <span>${f.is_dir ? 'dir' : 'file'}</span>
+                    </div>
+                `;
+            });
+            filesHtml += `</div></div>`;
+        } else {
+            filesHtml = `<div style="font-size: 12px; color: var(--text-tertiary); font-style: italic; margin-top: 12px;">Folder is empty.</div>`;
+        }
+
+        pane.innerHTML = `
+            <div class="fs-details-card">
+                <div class="fs-details-title">${escapeHtml(entry.name)}</div>
+                <div class="fs-details-path">${escapeHtml(entry.path)}</div>
+                ${badgeHtml}
+                ${warningHtml}
+                ${filesHtml}
+            </div>
+        `;
+    } catch (err) {
+        console.error(err);
+        pane.innerHTML = `
+            <div class="fs-details-card">
+                <div class="fs-details-title">${escapeHtml(entry.name)}</div>
+                <div class="fs-details-path">${escapeHtml(entry.path)}</div>
+                <div class="fs-model-badge invalid">⚠️ Error Loading Details</div>
+                <div style="font-size: 12px; color: #ff6b6b; margin-top: 10px;">
+                    Could not list directory contents.
+                </div>
+            </div>
+        `;
+        if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+    }
+}
+
+async function loadModelFromPath() {
+    if (!fsState.selectedPath) return;
+
+    if (state.isGenerating) {
+        showToast("Cannot switch model while generation is in progress. Please wait.", "error");
+        return;
+    }
+
+    const targetModelPath = fsState.selectedPath;
+
+    if (dom.modelSwitchingTitle) {
+        dom.modelSwitchingTitle.textContent = `Loading OpenVINO Model...`;
+    }
+    if (dom.modelSwitchingOverlay) {
+        dom.modelSwitchingOverlay.classList.add("visible");
+    }
+    if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = true;
+    if (dom.btnFsCancel) dom.btnFsCancel.disabled = true;
+
+    setStatus("loading", "Loading model...");
+    if (dom.modelStatus) dom.modelStatus.textContent = "Loading...";
+
+    try {
+        const res = await fetch("/api/model/switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_path: targetModelPath })
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || errData.error || "Failed to switch model");
+        }
+
+        const data = await res.json();
+
+        if (data.success) {
+            showToast(data.message || `Loaded model: ${data.model_name}`, "success");
+        } else {
+            showToast(data.message || `Failed to load model`, "error");
+        }
+
+        await fetchConfig();
+        closeModelBrowserModal();
+    } catch (err) {
+        console.error("Switch model error:", err);
+        showToast(`Model load failed: ${err.message}`, "error");
+        await fetchConfig();
+    } finally {
+        if (dom.modelSwitchingOverlay) {
+            dom.modelSwitchingOverlay.classList.remove("visible");
+        }
+        if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+        if (dom.btnFsCancel) dom.btnFsCancel.disabled = false;
+    }
+}
 }

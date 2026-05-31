@@ -121,6 +121,78 @@ class ModelEngine:
         gc.collect()
         print("[ModelEngine] Model unloaded.")
 
+    def switch_model(self, new_model_path: str) -> dict:
+        """
+        Switch to a different model at runtime.
+
+        Unloads the current model, updates the model path,
+        and reloads. Falls back to the previous model on failure.
+
+        Args:
+            new_model_path: Path to the new model directory.
+
+        Returns:
+            Dict with keys: success, model_name, model_path, message.
+        """
+        new_model_path = os.path.abspath(new_model_path.strip())
+        if not os.path.isdir(new_model_path):
+            return {
+                "success": False,
+                "model_name": self.model_name,
+                "model_path": self.model_path,
+                "message": f"Model directory does not exist: {new_model_path}",
+            }
+
+        if self._switching:
+            return {
+                "success": False,
+                "model_name": self.model_name,
+                "model_path": self.model_path,
+                "message": "A device or model switch is already in progress. Please wait.",
+            }
+
+        previous_path = self.model_path
+        previous_loaded = self._loaded
+
+        self._switching = True
+        try:
+            with self._lock:
+                self._unload()
+                self.model_path = new_model_path
+                self.tokenizer = None  # Force tokenizer reload
+                
+                try:
+                    self.load()
+                    return {
+                        "success": True,
+                        "model_name": self.model_name,
+                        "model_path": self.model_path,
+                        "message": f"Successfully loaded model: {self.model_name}",
+                    }
+                except Exception as e:
+                    print(f"[ModelEngine] Failed to load new model from {new_model_path}: {e}")
+                    # Try to roll back to the previous path
+                    self.model_path = previous_path
+                    self.tokenizer = None
+                    try:
+                        self.load()
+                        return {
+                            "success": False,
+                            "model_name": self.model_name,
+                            "model_path": self.model_path,
+                            "message": f"Failed to load model from {new_model_path}: {str(e)}. Successfully reverted to previous model: {self.model_name}.",
+                        }
+                    except Exception as e2:
+                        print(f"[ModelEngine] CRITICAL: Failed to reload previous model from {previous_path}: {e2}")
+                        return {
+                            "success": False,
+                            "model_name": "None",
+                            "model_path": "None",
+                            "message": f"Failed to load model from {new_model_path} and failed to revert to previous model. Engine is offline.",
+                        }
+        finally:
+            self._switching = False
+
     def switch_device(self, new_device: str) -> dict:
         """
         Switch the model to a different device at runtime.

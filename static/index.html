@@ -71,6 +71,11 @@
                                 <span class="label">Status</span>
                                 <span class="value" id="model-status">Connecting...</span>
                             </div>
+                            <div class="model-info-action">
+                                <button class="btn-switch-model" id="btn-switch-model" title="Select a model from the server filesystem">
+                                    📁 Switch Model...
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -555,6 +560,83 @@
             </div>
             <div class="modal-footer">
                 <div class="modal-footer-text">AI Chat Interface · Local Inference · Powered by OpenVINO</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Browser Modal (VS Code WebUI Style Filesystem Explorer) -->
+    <div class="modal-overlay" id="model-browser-modal-overlay">
+        <div class="modal model-browser-modal" id="model-browser-modal">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-title-icon">📁</span>
+                    <span>Select Local OpenVINO Model</span>
+                </div>
+                <button class="modal-close" id="model-browser-modal-close">✕</button>
+            </div>
+            
+            <!-- Path navigation bar -->
+            <div class="fs-nav-bar">
+                <div class="fs-nav-shortcuts">
+                    <button class="btn-fs-nav" id="btn-fs-up" title="Up one level">⬆ Up</button>
+                    <button class="btn-fs-nav" id="btn-fs-home" title="User Home Directory">🏠 Home</button>
+                    <button class="btn-fs-nav" id="btn-fs-workspace" title="Project Workspace">📁 Workspace</button>
+                    <button class="btn-fs-nav" id="btn-fs-root" title="Root Directory">💻 Root</button>
+                </div>
+                <div class="fs-path-input-wrapper">
+                    <input type="text" id="fs-path-input" placeholder="Enter absolute directory path..." title="Type path and press Enter or Go">
+                    <button class="btn-fs-go" id="btn-fs-go">Go</button>
+                </div>
+            </div>
+
+            <div class="modal-body fs-modal-body">
+                <div class="fs-browser-container">
+                    <!-- Left: File tree explorer -->
+                    <div class="fs-tree-pane">
+                        <div class="fs-tree-header">
+                            <span>Directories & Files</span>
+                            <span class="fs-tree-hint">Click folder to select, arrow to expand</span>
+                        </div>
+                        <div class="fs-tree-content" id="fs-explorer-tree">
+                            <!-- populated dynamically -->
+                            <div class="fs-tree-loading">
+                                <div class="device-switching-spinner" style="margin: 0 auto 10px;"></div>
+                                Loading file system...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right: Info & Preview Pane -->
+                    <div class="fs-details-pane">
+                        <div class="fs-details-header">Selected Item Details</div>
+                        <div class="fs-details-content" id="fs-item-details">
+                            <div class="fs-details-empty">
+                                <span class="fs-details-empty-icon">📁</span>
+                                <div>Select a folder in the explorer tree on the left to see details.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer fs-modal-footer">
+                <div class="fs-modal-footer-left">
+                    <span class="fs-selected-path-label">Selected:</span>
+                    <span class="fs-selected-path-value" id="fs-selected-path">—</span>
+                </div>
+                <div class="fs-modal-actions">
+                    <button class="btn-fs-cancel" id="btn-fs-cancel">Cancel</button>
+                    <button class="btn-fs-confirm" id="btn-fs-confirm" disabled>Load Model</button>
+                </div>
+            </div>
+
+            <!-- Model switching overlay -->
+            <div class="model-switching-overlay" id="model-switching-overlay">
+                <div class="model-switching-spinner-container">
+                    <div class="model-switching-spinner"></div>
+                    <div class="model-switching-title" id="model-switching-title">Loading OpenVINO Model...</div>
+                    <div class="model-switching-subtitle">This may take up to a minute depending on hardware.</div>
+                </div>
             </div>
         </div>
     </div>
