@@ -4293,3 +4293,317 @@ body {
     background: rgba(0, 0, 0, 0.05);
 }
 
+/* Storage path selection row in notes modal */
+.notes-dir-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    margin-bottom: 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.notes-dir-label {
+    color: var(--text-secondary);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.notes-dir-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+.btn-notes-dir-save, .btn-notes-dir-browse {
+    padding: 4px 10px;
+    background: var(--bg-glass-strong);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+}
+
+.btn-notes-dir-save:hover, .btn-notes-dir-browse:hover {
+    border-color: var(--accent-1);
+    background: var(--gradient-accent);
+    color: white;
+}
+
+/* Resize Handles for movable/resizable windows */
+.resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    height: 14px;
+    cursor: se-resize;
+    z-index: 1000;
+    background: linear-gradient(135deg, transparent 40%, var(--accent-2) 100%);
+    border-bottom-right-radius: var(--radius-xl);
+    opacity: 0.4;
+    transition: opacity var(--transition-fast);
+}
+
+.resize-handle:hover {
+    opacity: 1;
+}
+
+/* Ensure context popup has relative or absolute position context for resize handle */
+.context-popup {
+    position: fixed !important;
+}
+
+/* Ensure header cursor shows grab when draggable */
+.modal-header, .context-popup-header {
+    cursor: grab;
+}
+
+.modal-header:active, .context-popup-header:active {
+    cursor: grabbing;
+}
+
+/* ── Mousepad Notes Toolbar & Highlight Overlays ────────────────── */
+
+:root {
+    --hl-comment: #747d8c;
+    --hl-string: #2ed573;
+    --hl-keyword: #ff7f50;
+    --hl-builtin: #70a1ff;
+    --hl-function: #eccc68;
+    --hl-number: #ff6b81;
+    --hl-decorator: #a29bfe;
+    --hl-tag: #ff4757;
+    --hl-attr: #ffa502;
+    --hl-selector: #54a0ff;
+    --hl-property: #ff7f50;
+    --hl-header: #ffa502;
+}
+
+.light-theme {
+    --hl-comment: #7f8c8d;
+    --hl-string: #27ae60;
+    --hl-keyword: #d35400;
+    --hl-builtin: #2980b9;
+    --hl-function: #b8860b;
+    --hl-number: #c0392b;
+    --hl-decorator: #8e44ad;
+    --hl-tag: #c0392b;
+    --hl-attr: #d35400;
+    --hl-selector: #2980b9;
+    --hl-property: #d35400;
+    --hl-header: #b8860b;
+}
+
+.notes-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-glass-strong);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+
+.notes-toolbar-left, .notes-toolbar-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-tb-action {
+    padding: 6px 12px;
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-tb-action:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--accent-1);
+    color: var(--text-primary);
+}
+
+.light-theme .btn-tb-action:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.notes-tb-dropdown-container {
+    position: relative;
+}
+
+.notes-settings-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 200px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    padding: 12px;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.notes-settings-dropdown.show {
+    display: flex;
+}
+
+.settings-dropdown-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.settings-dropdown-item label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    width: 100%;
+}
+
+.settings-dropdown-item.tab-size-config {
+    cursor: default;
+}
+
+.settings-dropdown-item input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--accent-1);
+}
+
+.settings-dropdown-divider {
+    height: 1px;
+    background: var(--border-subtle);
+    margin: 2px 0;
+}
+
+.dropdown-select {
+    background: var(--bg-glass-strong);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 3px 6px;
+    font-size: 11px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+}
+
+.dropdown-select:focus {
+    border-color: var(--accent-1);
+}
+
+/* Overlay Textarea & Pre Highlight */
+.notes-textarea-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.notes-textarea, .notes-highlight-pre {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 14px;
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    box-sizing: border-box;
+    border: 1px solid var(--border-subtle);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.notes-textarea {
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text-primary);
+    z-index: 2;
+    resize: none;
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+.notes-textarea.no-highlight {
+    color: var(--text-primary);
+}
+
+.notes-textarea:focus {
+    border-color: var(--accent-1);
+}
+
+.notes-highlight-pre {
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    z-index: 1;
+    pointer-events: none;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.notes-highlight-pre::-webkit-scrollbar {
+    display: none;
+}
+
+.notes-textarea::selection {
+    background: rgba(108, 92, 231, 0.25);
+    color: transparent;
+}
+
+.notes-textarea.no-highlight::selection {
+    background: rgba(108, 92, 231, 0.25);
+    color: inherit;
+}
+
+/* Syntax Tokens styling */
+.hl-comment { color: var(--hl-comment); font-style: italic; }
+.hl-string { color: var(--hl-string); }
+.hl-keyword { color: var(--hl-keyword); font-weight: 500; }
+.hl-builtin { color: var(--hl-builtin); }
+.hl-function { color: var(--hl-function); }
+.hl-number { color: var(--hl-number); }
+.hl-decorator { color: var(--hl-decorator); }
+.hl-tag { color: var(--hl-tag); font-weight: 500; }
+.hl-attr { color: var(--hl-attr); }
+.hl-selector { color: var(--hl-selector); font-weight: 500; }
+.hl-property { color: var(--hl-property); }
+.hl-header { color: var(--hl-header); font-weight: bold; }
+
+
+

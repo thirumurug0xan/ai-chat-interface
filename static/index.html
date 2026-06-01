@@ -798,6 +798,13 @@
                 </div>
             </div>
             <div class="modal-body notes-modal-body">
+                <!-- Directory Configuration Row (kept hidden to maintain state/browse references) -->
+                <div class="notes-dir-row" style="display: none;">
+                    <span class="notes-dir-label">Storage Folder:</span>
+                    <input type="text" id="notes-dir-input" class="notes-dir-input" placeholder="e.g. ~/my-notes" title="Notes directory path">
+                    <button class="btn-notes-dir-browse" id="btn-notes-dir-browse" title="Browse directories on the server">Browse...</button>
+                    <button class="btn-notes-dir-save" id="btn-notes-dir-save" title="Apply folder path">Apply</button>
+                </div>
                 <div class="notes-layout">
                     <!-- Left sidebar: note list -->
                     <div class="notes-sidebar">
@@ -819,11 +826,42 @@
                     
                     <!-- Right content: note editor -->
                     <div class="notes-editor-pane">
+                        <div class="notes-toolbar">
+                            <div class="notes-toolbar-left">
+                                <button class="btn-tb-action" id="btn-tb-new" title="New Note (＋)">📄 New</button>
+                                <button class="btn-tb-action" id="btn-tb-open" title="Open Folder (📁)">📁 Open Folder</button>
+                            </div>
+                            <div class="notes-toolbar-right">
+                                <div class="notes-tb-dropdown-container">
+                                    <button class="btn-tb-action" id="btn-tb-settings" title="Editor Settings (⚙️)">⚙️ Settings <span class="chevron">▾</span></button>
+                                    <div class="notes-settings-dropdown" id="notes-settings-dropdown">
+                                        <div class="settings-dropdown-item">
+                                            <label for="chk-syntax-highlight" class="checkbox-label">
+                                                <input type="checkbox" id="chk-syntax-highlight" checked>
+                                                Syntax Highlight
+                                            </label>
+                                        </div>
+                                        <div class="settings-dropdown-divider"></div>
+                                        <div class="settings-dropdown-item tab-size-config">
+                                            <span>Tab Size:</span>
+                                            <select id="sel-tab-size" class="dropdown-select">
+                                                <option value="2">2 spaces</option>
+                                                <option value="4" selected>4 spaces</option>
+                                                <option value="8">8 spaces</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="notes-editor-header">
                             <input type="text" id="notes-filename" class="notes-filename-input" placeholder="filename.txt" title="Filename for saving note">
                         </div>
                         <div class="notes-editor-body">
-                            <textarea id="notes-textarea" class="notes-textarea" placeholder="Start typing your note here..."></textarea>
+                            <div class="notes-textarea-container">
+                                <pre id="notes-highlight-pre" class="notes-highlight-pre" aria-hidden="true"></pre>
+                                <textarea id="notes-textarea" class="notes-textarea" placeholder="Start typing your note here..."></textarea>
+                            </div>
                         </div>
                         <div class="notes-editor-footer">
                             <div class="notes-status-left">
