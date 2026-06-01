@@ -630,35 +630,68 @@ def models_download_cancel(task_id):
 
 # ── Mousepad Notes Endpoints ─────────────────────────────────────────────────
 
-NOTES_DIR = os.path.abspath(os.path.join(os.getcwd(), "notes"))
-os.makedirs(NOTES_DIR, exist_ok=True)
+NOTES_CONFIG_PATH = os.path.abspath(os.path.join(os.getcwd(), "notes_config.json"))
+
+def get_notes_dir():
+    """
+    Get current active notes directory from config file or default path.
+    """
+    default_dir = os.path.abspath(os.path.join(os.getcwd(), "notes"))
+    if os.path.exists(NOTES_CONFIG_PATH):
+        try:
+            with open(NOTES_CONFIG_PATH, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                custom_path = config.get("notes_dir")
+                if custom_path:
+                    # Expand user path (e.g. ~)
+                    expanded_path = os.path.abspath(os.path.expanduser(custom_path))
+                    os.makedirs(expanded_path, exist_ok=True)
+                    return expanded_path
+        except Exception:
+            pass
+    os.makedirs(default_dir, exist_ok=True)
+    return default_dir
+
+def set_notes_dir(new_path):
+    """
+    Save custom notes directory to config file.
+    """
+    expanded_path = os.path.abspath(os.path.expanduser(new_path))
+    os.makedirs(expanded_path, exist_ok=True)
+    with open(NOTES_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump({"notes_dir": expanded_path}, f, indent=2)
+    return expanded_path
 
 def safe_notes_path(filename):
     """
-    Sanitize filename and ensure it resolves inside NOTES_DIR.
+    Sanitize filename and ensure it resolves inside active notes directory.
     """
     if not filename:
         raise ValueError("Filename is empty")
+    if "/" in filename or "\\" in filename:
+        raise ValueError("Directory traversal/subdirectories not allowed")
     # Strip any directory separators to prevent directory traversal
     filename = os.path.basename(filename)
     if filename in (".", "..") or not filename:
         raise ValueError("Invalid filename")
     
+    notes_dir = get_notes_dir()
     # Secure double check
-    full_path = os.path.abspath(os.path.join(NOTES_DIR, filename))
-    if not full_path.startswith(NOTES_DIR):
+    full_path = os.path.abspath(os.path.join(notes_dir, filename))
+    if not full_path.startswith(notes_dir):
         raise ValueError("Directory traversal attempt detected")
     return full_path
 
 @app.route("/api/notes/list", methods=["GET"])
 def notes_list():
     """
-    List all text/markdown notes in the notes directory.
+    List all text/markdown notes in the active notes directory.
     """
     try:
+        notes_dir = get_notes_dir()
         notes = []
-        for filename in os.listdir(NOTES_DIR):
-            file_path = os.path.join(NOTES_DIR, filename)
+        for filename in os.listdir(notes_dir):
+            file_path = os.path.join(notes_dir, filename)
             # Only list files (not folders) and only txt/md files
             if os.path.isfile(file_path) and (filename.endswith(".txt") or filename.endswith(".md")):
                 stat = os.stat(file_path)
@@ -765,6 +798,41 @@ def notes_delete():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notes/get_directory", methods=["GET"])
+def notes_get_directory():
+    """
+    Get current active notes directory path.
+    """
+    try:
+        return jsonify({
+            "path": get_notes_dir()
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notes/set_directory", methods=["POST"])
+def notes_set_directory():
+    """
+    Set a custom notes directory path.
+    """
+    data = request.get_json() or {}
+    new_path = data.get("path", "").strip()
+    
+    if not new_path:
+        return jsonify({"error": "Path is empty"}), 400
+        
+    try:
+        updated_path = set_notes_dir(new_path)
+        return jsonify({
+            "success": True,
+            "path": updated_path,
+            "message": f"Notes directory changed to {updated_path}"
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to set directory: {str(e)}"}), 500
 
 
 # ── Startup ──────────────────────────────────────────────────────────────────

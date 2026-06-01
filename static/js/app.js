@@ -39,7 +39,9 @@ const notesState = {
     currentFilename: "",
     originalContent: "",
     originalFilename: "",
-    isUnsaved: false
+    isUnsaved: false,
+    syntaxHighlightOn: localStorage.getItem("notes_syntax_highlight") !== "false",
+    tabSize: parseInt(localStorage.getItem("notes_tab_size")) || 4
 };
 
 // ── DOM References ───────────────────────────────────────────────────────────
@@ -205,6 +207,17 @@ const dom = {
     notesCharCount: $("#notes-char-count"),
     btnNotesDownload: $("#btn-notes-download"),
     btnNotesSave: $("#btn-notes-save"),
+    notesDirInput: $("#notes-dir-input"),
+    btnNotesDirSave: $("#btn-notes-dir-save"),
+    btnNotesDirBrowse: $("#btn-notes-dir-browse"),
+    // New Mousepad toolbar and settings
+    btnTbNew: $("#btn-tb-new"),
+    btnTbOpen: $("#btn-tb-open"),
+    btnTbSettings: $("#btn-tb-settings"),
+    notesSettingsDropdown: $("#notes-settings-dropdown"),
+    chkSyntaxHighlight: $("#chk-syntax-highlight"),
+    selTabSize: $("#sel-tab-size"),
+    notesHighlightPre: $("#notes-highlight-pre"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -218,6 +231,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initMemoryMonitor();
     initSVGGradient();
     initPanelToggles();
+    initWindowDraggingAndResizing();
 });
 
 // ── Event Listeners ──────────────────────────────────────────────────────────
@@ -456,9 +470,9 @@ function initEventListeners() {
         });
     }
 
-    // Confirm selection (Load Model)
+    // Confirm selection (Load Model or select notes folder)
     if (dom.btnFsConfirm) {
-        dom.btnFsConfirm.addEventListener("click", loadModelFromPath);
+        dom.btnFsConfirm.addEventListener("click", handleFsConfirm);
     }
 
     // Model Downloader Open
@@ -600,6 +614,7 @@ function initEventListeners() {
         dom.notesFilename.addEventListener("input", (e) => {
             notesState.currentFilename = e.target.value;
             checkUnsavedChanges();
+            syncHighlight();
         });
     }
     if (dom.notesTextarea) {
@@ -607,6 +622,84 @@ function initEventListeners() {
             notesState.currentContent = e.target.value;
             updateNotesCounters();
             checkUnsavedChanges();
+            syncHighlight();
+        });
+    }
+
+    // Notes Toolbar & Settings listeners
+    if (dom.btnTbNew) {
+        dom.btnTbNew.addEventListener("click", createNewNote);
+    }
+    if (dom.btnTbOpen) {
+        dom.btnTbOpen.addEventListener("click", () => {
+            fsState.selectorMode = "notes";
+            const val = dom.notesDirInput ? dom.notesDirInput.value.trim() : "";
+            if (val) {
+                fsState.currentPath = val;
+            } else {
+                fsState.currentPath = "";
+            }
+            openModelBrowserModal();
+            loadDirectoryContents(fsState.currentPath);
+        });
+    }
+    if (dom.btnTbSettings) {
+        dom.btnTbSettings.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (dom.notesSettingsDropdown) {
+                dom.notesSettingsDropdown.classList.toggle("show");
+            }
+        });
+    }
+    // Close settings dropdown when clicking outside
+    document.addEventListener("click", (e) => {
+        if (dom.notesSettingsDropdown && dom.notesSettingsDropdown.classList.contains("show")) {
+            if (!e.target.closest(".notes-tb-dropdown-container")) {
+                dom.notesSettingsDropdown.classList.remove("show");
+            }
+        }
+    });
+    if (dom.chkSyntaxHighlight) {
+        dom.chkSyntaxHighlight.checked = notesState.syntaxHighlightOn;
+        dom.chkSyntaxHighlight.addEventListener("change", (e) => {
+            notesState.syntaxHighlightOn = e.target.checked;
+            localStorage.setItem("notes_syntax_highlight", notesState.syntaxHighlightOn);
+            updateHighlightView();
+            syncHighlight();
+        });
+    }
+    if (dom.selTabSize) {
+        dom.selTabSize.value = notesState.tabSize;
+        dom.selTabSize.addEventListener("change", (e) => {
+            notesState.tabSize = parseInt(e.target.value) || 4;
+            localStorage.setItem("notes_tab_size", notesState.tabSize);
+        });
+    }
+    if (dom.notesTextarea) {
+        // Sync scroll
+        dom.notesTextarea.addEventListener("scroll", () => {
+            if (dom.notesHighlightPre) {
+                dom.notesHighlightPre.scrollTop = dom.notesTextarea.scrollTop;
+                dom.notesHighlightPre.scrollLeft = dom.notesTextarea.scrollLeft;
+            }
+        });
+        // Intercept Tab key
+        dom.notesTextarea.addEventListener("keydown", (e) => {
+            if (e.key === "Tab") {
+                e.preventDefault();
+                const start = dom.notesTextarea.selectionStart;
+                const end = dom.notesTextarea.selectionEnd;
+                const val = dom.notesTextarea.value;
+                const tabSpaces = " ".repeat(notesState.tabSize);
+                
+                dom.notesTextarea.value = val.substring(0, start) + tabSpaces + val.substring(end);
+                dom.notesTextarea.selectionStart = dom.notesTextarea.selectionEnd = start + notesState.tabSize;
+                
+                notesState.currentContent = dom.notesTextarea.value;
+                updateNotesCounters();
+                checkUnsavedChanges();
+                syncHighlight();
+            }
         });
     }
     if (dom.notesSearch) {
@@ -625,6 +718,28 @@ function initEventListeners() {
             }
             dom.notesSearchClear.style.display = "none";
             renderNotesList();
+        });
+    }
+    if (dom.btnNotesDirSave) {
+        dom.btnNotesDirSave.addEventListener("click", saveNotesDirectory);
+    }
+    if (dom.notesDirInput) {
+        dom.notesDirInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                saveNotesDirectory();
+            }
+        });
+    }
+    if (dom.btnNotesDirBrowse) {
+        dom.btnNotesDirBrowse.addEventListener("click", () => {
+            fsState.selectorMode = "notes";
+            // Initialize path browser to the input path
+            const val = dom.notesDirInput ? dom.notesDirInput.value.trim() : "";
+            if (val) {
+                fsState.currentPath = val;
+            }
+            openModelBrowserModal();
         });
     }
 }
@@ -1990,10 +2105,27 @@ function handleExport() {
 
 function openModelBrowserModal() {
     if (dom.btnSwitchModel) dom.btnSwitchModel.classList.remove("minimized-active");
-    if (state.modelConfig && state.modelConfig.model_path) {
-        fsState.currentPath = state.modelConfig.model_path;
+    
+    if (fsState.selectorMode === "notes") {
+        const titleEl = dom.modelBrowserModal ? dom.modelBrowserModal.querySelector(".modal-title span") : null;
+        if (titleEl) titleEl.textContent = "Select Notes Storage Folder";
+        if (dom.btnFsConfirm) dom.btnFsConfirm.textContent = "Select Folder";
+        
+        if (dom.notesDirInput && dom.notesDirInput.value.trim()) {
+            fsState.currentPath = dom.notesDirInput.value.trim();
+        } else {
+            fsState.currentPath = "";
+        }
     } else {
-        fsState.currentPath = "";
+        const titleEl = dom.modelBrowserModal ? dom.modelBrowserModal.querySelector(".modal-title span") : null;
+        if (titleEl) titleEl.textContent = "Select Local OpenVINO Model";
+        if (dom.btnFsConfirm) dom.btnFsConfirm.textContent = "Load Model";
+        
+        if (state.modelConfig && state.modelConfig.model_path) {
+            fsState.currentPath = state.modelConfig.model_path;
+        } else {
+            fsState.currentPath = "";
+        }
     }
 
     fsState.selectedPath = "";
@@ -2024,6 +2156,14 @@ function closeModelBrowserModal() {
     }
     if (dom.btnSwitchModel) dom.btnSwitchModel.classList.remove("minimized-active");
     if (dom.modelBrowserModal) dom.modelBrowserModal.classList.remove("fullscreen");
+    
+    // Restore default texts
+    const titleEl = dom.modelBrowserModal ? dom.modelBrowserModal.querySelector(".modal-title span") : null;
+    if (titleEl) titleEl.textContent = "Select Local OpenVINO Model";
+    if (dom.btnFsConfirm) dom.btnFsConfirm.textContent = "Load Model";
+    
+    // Reset mode
+    fsState.selectorMode = "model";
 }
 
 async function renderRootTree() {
@@ -2308,6 +2448,20 @@ async function renderDetailsPane(entry) {
             </div>
         `;
         if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+    }
+}
+
+async function handleFsConfirm() {
+    if (!fsState.selectedPath) return;
+
+    if (fsState.selectorMode === "notes") {
+        if (dom.notesDirInput) {
+            dom.notesDirInput.value = fsState.selectedPath;
+        }
+        closeModelBrowserModal();
+        await saveNotesDirectory();
+    } else {
+        await loadModelFromPath();
     }
 }
 
@@ -3055,6 +3209,7 @@ async function openNotesModal() {
     if (dom.notesTextarea) dom.notesTextarea.value = "";
     if (dom.notesSearch) dom.notesSearch.value = "";
     if (dom.notesSearchClear) dom.notesSearchClear.style.display = "none";
+    if (dom.notesDirInput) dom.notesDirInput.value = "";
     
     updateNotesCounters();
     checkUnsavedChanges();
@@ -3063,14 +3218,32 @@ async function openNotesModal() {
         dom.notesOverlay.classList.add("visible");
     }
     
+    // Fetch current notes directory path
+    try {
+        const res = await fetch("/api/notes/get_directory");
+        if (res.ok) {
+            const data = await res.json();
+            if (dom.notesDirInput) {
+                dom.notesDirInput.value = data.path;
+            }
+        }
+    } catch (err) {
+        console.error("Failed to load notes directory:", err);
+    }
+    
     await fetchNotesList();
     
     // Select first note if available
     if (notesState.notes.length > 0) {
-        loadNote(notesState.notes[0].name);
+        await loadNote(notesState.notes[0].name);
     } else {
         createNewNote();
     }
+
+    if (dom.chkSyntaxHighlight) dom.chkSyntaxHighlight.checked = notesState.syntaxHighlightOn;
+    if (dom.selTabSize) dom.selTabSize.value = notesState.tabSize;
+    updateHighlightView();
+    syncHighlight();
 }
 
 function closeNotesModal() {
@@ -3188,6 +3361,7 @@ async function loadNote(filename) {
         
         updateNotesCounters();
         checkUnsavedChanges();
+        syncHighlight();
         
         // Re-render notes list to highlight active item
         renderNotesList(dom.notesSearch ? dom.notesSearch.value.toLowerCase().trim() : "");
@@ -3223,6 +3397,7 @@ function createNewNote() {
     
     updateNotesCounters();
     checkUnsavedChanges();
+    syncHighlight();
     
     // Clear list selection
     renderNotesList(dom.notesSearch ? dom.notesSearch.value.toLowerCase().trim() : "");
@@ -3273,6 +3448,7 @@ async function saveActiveNote() {
         notesState.isUnsaved = false;
         
         checkUnsavedChanges();
+        syncHighlight();
         
         // Refresh notes list and content
         await fetchNotesList();
@@ -3386,5 +3562,396 @@ function checkUnsavedChanges() {
             badge.textContent = "Saved";
             badge.className = "notes-status-badge";
         }
+    }
+}
+
+async function saveNotesDirectory() {
+    const inputPath = dom.notesDirInput ? dom.notesDirInput.value.trim() : "";
+    if (!inputPath) {
+        showToast("Please enter a folder path", "warning");
+        return;
+    }
+    
+    try {
+        const res = await fetch("/api/notes/set_directory", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: inputPath })
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+        
+        const data = await res.json();
+        showToast(data.message || "Storage directory updated successfully", "success");
+        if (dom.notesDirInput) {
+            dom.notesDirInput.value = data.path;
+        }
+        
+        // Reload notes list for the new directory
+        await fetchNotesList();
+        
+        // Select first note in the new folder if available, else new note
+        if (notesState.notes.length > 0) {
+            await loadNote(notesState.notes[0].name);
+        } else {
+            notesState.activeNoteName = null;
+            notesState.currentFilename = "untitled.txt";
+            notesState.currentContent = "";
+            notesState.originalFilename = "";
+            notesState.originalContent = "";
+            notesState.isUnsaved = true;
+            if (dom.notesFilename) dom.notesFilename.value = "untitled.txt";
+            if (dom.notesTextarea) dom.notesTextarea.value = "";
+            updateNotesCounters();
+            checkUnsavedChanges();
+            syncHighlight();
+        }
+    } catch (err) {
+        console.error("Failed to change notes directory:", err);
+        showToast(`Failed to change folder: ${err.message}`, "error");
+    }
+}
+
+// ── Syntax Highlighting Engine ───────────────────────────────────────────────
+
+const pyRules = {
+    comment: /#[^\n]*/,
+    string: /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/,
+    decorator: /@[a-zA-Z_][a-zA-Z0-9_]*/,
+    keyword: /\b(?:def|class|return|if|else|elif|for|while|import|from|as|in|is|not|and|or|try|except|finally|with|lambda|global|nonlocal|pass|break|continue|None|True|False)\b/,
+    builtin: /\b(?:print|len|range|str|int|float|dict|list|set|tuple|open|sum|min|max|abs|type)\b/,
+    function: /\b[a-zA-Z_][a-zA-Z0-9_]*(?=\s*\()/,
+    number: /\b\d+(?:\.\d+)?\b/
+};
+
+const jsRules = {
+    comment: /\/\/.*|\/\*[\s\S]*?\*\//,
+    string: /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/,
+    keyword: /\b(?:const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|import|export|from|default|class|extends|new|this|typeof|instanceof|try|catch|finally|throw|async|await|in|of|null|undefined|true|false)\b/,
+    builtin: /\b(?:console|window|document|process|require|module|exports|Object|Array|String|Number|Boolean|Function|Promise|Map|Set|JSON|Math|Error)\b/,
+    function: /\b[a-zA-Z_][a-zA-Z0-9_]*(?=\s*\()/,
+    number: /\b\d+(?:\.\d+)?\b/
+};
+
+const cssRules = {
+    comment: /\/\*[\s\S]*?\*\//,
+    string: /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/,
+    selector: /[a-zA-Z0-9\-\.\#\_\*:\s,>+~]+(?=\s*\{)/,
+    property: /[a-zA-Z\-]+(?=\s*:)/,
+    number: /\b\d+(?:px|em|rem|%|vh|vw|s|ms|deg)?\b/
+};
+
+const htmlRules = {
+    comment: /&lt;!--[\s\S]*?--&gt;/,
+    doctype: /&lt;![dD][oO][cC][tT][yY][pP][eE][\s\S]*?&gt;/,
+    tag: /&lt;\/?[a-zA-Z0-9\-]+/,
+    attr: /\b[a-zA-Z\-]+(?=\s*=\s*["'])/,
+    string: /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/
+};
+
+const mdRules = {
+    codeblock: /```[\s\S]*?```/,
+    inlinecode: /`[^`]+`/,
+    header: /^#{1,6}\s+.+$/m,
+    bold: /\*\*[^\*]+\*\*/,
+    italic: /\*[^\*]+\*/,
+    link: /\[[^\]]+\]\([^\)]+\)/,
+    blockquote: /^\s*&gt;\s+.+$/m,
+    list: /^\s*(?:[\*\-\+]|\d+\.)\s+.+$/m
+};
+
+function buildHighlightRegex(rules) {
+    const parts = Object.entries(rules).map(([name, regex]) => {
+        return `(?<${name}>${regex.source})`;
+    });
+    return new RegExp(parts.join('|'), 'g');
+}
+
+const pyRegex = buildHighlightRegex(pyRules);
+const jsRegex = buildHighlightRegex(jsRules);
+const cssRegex = buildHighlightRegex(cssRules);
+const htmlRegex = buildHighlightRegex(htmlRules);
+const mdRegex = buildHighlightRegex(mdRules);
+
+function escapeHtmlCode(text) {
+    if (!text) return "";
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function highlightCode(text, filename) {
+    if (!text) return "";
+    const escaped = escapeHtmlCode(text);
+    
+    const ext = filename ? filename.split('.').pop().toLowerCase() : '';
+    let regex = null;
+    
+    if (ext === 'py') regex = pyRegex;
+    else if (['js', 'ts', 'json'].includes(ext)) regex = jsRegex;
+    else if (ext === 'css') regex = cssRegex;
+    else if (['html', 'xml'].includes(ext)) regex = htmlRegex;
+    else if (ext === 'md') regex = mdRegex;
+    
+    if (!regex) return escaped;
+    
+    return escaped.replace(regex, (match, ...args) => {
+        const groups = args[args.length - 1];
+        if (typeof groups === 'object' && groups !== null) {
+            for (const [key, val] of Object.entries(groups)) {
+                if (val !== undefined) {
+                    return `<span class="hl-${key}">${val}</span>`;
+                }
+            }
+        }
+        return match;
+    });
+}
+
+function syncHighlight() {
+    if (!dom.notesTextarea || !dom.notesHighlightPre) return;
+    
+    const text = dom.notesTextarea.value;
+    const filename = dom.notesFilename ? dom.notesFilename.value.trim() : "";
+    
+    if (notesState.syntaxHighlightOn) {
+        dom.notesHighlightPre.innerHTML = highlightCode(text, filename) + "\n";
+    } else {
+        dom.notesHighlightPre.textContent = text;
+    }
+    
+    dom.notesHighlightPre.scrollTop = dom.notesTextarea.scrollTop;
+    dom.notesHighlightPre.scrollLeft = dom.notesTextarea.scrollLeft;
+}
+
+function updateHighlightView() {
+    if (!dom.notesTextarea) return;
+    if (notesState.syntaxHighlightOn) {
+        dom.notesTextarea.classList.remove("no-highlight");
+        if (dom.notesHighlightPre) dom.notesHighlightPre.style.display = "block";
+    } else {
+        dom.notesTextarea.classList.add("no-highlight");
+        if (dom.notesHighlightPre) dom.notesHighlightPre.style.display = "none";
+    }
+}
+
+// ── Window Draggable & Resizable Utilities ────────────────────────────────────
+
+function initWindowDraggingAndResizing() {
+    // 1. Settings Modal
+    if (dom.settingsModal) {
+        const header = dom.settingsModal.querySelector(".modal-header");
+        if (header) makeWindowDraggable(dom.settingsModal, header);
+        makeWindowResizable(dom.settingsModal);
+    }
+    
+    // 2. Help Modal
+    if (dom.helpModal) {
+        const header = dom.helpModal.querySelector(".modal-header");
+        if (header) makeWindowDraggable(dom.helpModal, header);
+        makeWindowResizable(dom.helpModal);
+    }
+    
+    // 3. Model Browser Modal
+    if (dom.modelBrowserModal) {
+        const header = dom.modelBrowserModal.querySelector(".modal-header");
+        if (header) makeWindowDraggable(dom.modelBrowserModal, header);
+        makeWindowResizable(dom.modelBrowserModal);
+    }
+    
+    // 4. Model Downloader Modal
+    if (dom.modelDownloaderModal) {
+        const header = dom.modelDownloaderModal.querySelector(".modal-header");
+        if (header) makeWindowDraggable(dom.modelDownloaderModal, header);
+        makeWindowResizable(dom.modelDownloaderModal);
+    }
+    
+    // 5. Context Popup
+    if (dom.contextPopup) {
+        const header = dom.contextPopup.querySelector(".context-popup-header");
+        if (header) makeWindowDraggable(dom.contextPopup, header);
+        makeWindowResizable(dom.contextPopup);
+    }
+    
+    // 6. Notes Modal (Mousepad)
+    if (dom.notesModal) {
+        const header = dom.notesModal.querySelector(".modal-header");
+        if (header) makeWindowDraggable(dom.notesModal, header);
+        makeWindowResizable(dom.notesModal);
+    }
+    
+    // Reset positions whenever modals are opened to re-center them initially
+    const resetWindowStyle = (win) => {
+        if (!win) return;
+        win.style.position = "";
+        win.style.margin = "";
+        win.style.transform = "";
+        win.style.left = "";
+        win.style.top = "";
+        win.style.width = "";
+        win.style.height = "";
+        win.style.maxWidth = "";
+        win.style.maxHeight = "";
+    };
+    
+    // Listen to toggles/clicks to reset positioning
+    if (dom.btnSettings) dom.btnSettings.addEventListener("click", () => resetWindowStyle(dom.settingsModal));
+    if (dom.btnHelp) dom.btnHelp.addEventListener("click", () => resetWindowStyle(dom.helpModal));
+    if (dom.btnSwitchModel) dom.btnSwitchModel.addEventListener("click", () => resetWindowStyle(dom.modelBrowserModal));
+    if (dom.btnDownloadModel) dom.btnDownloadModel.addEventListener("click", () => resetWindowStyle(dom.modelDownloaderModal));
+    if (dom.btnNotes) dom.btnNotes.addEventListener("click", () => resetWindowStyle(dom.notesModal));
+}
+
+function makeWindowDraggable(win, header) {
+    let mouseX = 0, mouseY = 0;
+    
+    header.addEventListener("mousedown", dragStart);
+    header.addEventListener("touchstart", dragStart, { passive: false });
+    
+    function dragStart(e) {
+        // Exclude interactive elements in header
+        if (e.target.closest("button") || e.target.closest(".window-controls")) {
+            return;
+        }
+        if (win.classList.contains("fullscreen")) {
+            return;
+        }
+        
+        e.preventDefault();
+        
+        // Handle touch vs mouse
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        mouseX = clientX;
+        mouseY = clientY;
+        
+        // Disable CSS transitions during drag
+        win.style.transition = "none";
+        
+        if (e.touches) {
+            document.addEventListener("touchmove", dragMove, { passive: false });
+            document.addEventListener("touchend", dragEnd);
+        } else {
+            document.addEventListener("mousemove", dragMove);
+            document.addEventListener("mouseup", dragEnd);
+        }
+    }
+    
+    function dragMove(e) {
+        if (win.classList.contains("fullscreen")) return;
+        e.preventDefault();
+        
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        const dx = clientX - mouseX;
+        const dy = clientY - mouseY;
+        
+        mouseX = clientX;
+        mouseY = clientY;
+        
+        let left = parseFloat(win.style.left) || 0;
+        let top = parseFloat(win.style.top) || 0;
+        
+        // On first drag, change layout structure from flex center to absolute fixed
+        if (!win.style.left || !win.style.top) {
+            const rect = win.getBoundingClientRect();
+            left = rect.left;
+            top = rect.top;
+            
+            win.style.position = "fixed";
+            win.style.margin = "0";
+            win.style.transform = "none";
+            
+            // Set explicit width/height to prevent sudden size changes when changing position type
+            win.style.width = `${rect.width}px`;
+            win.style.height = `${rect.height}px`;
+        }
+        
+        win.style.left = `${left + dx}px`;
+        win.style.top = `${top + dy}px`;
+    }
+    
+    function dragEnd(e) {
+        document.removeEventListener("mousemove", dragMove);
+        document.removeEventListener("mouseup", dragEnd);
+        document.removeEventListener("touchmove", dragMove);
+        document.removeEventListener("touchend", dragEnd);
+        
+        win.style.transition = ""; // Restore transitions
+    }
+}
+
+function makeWindowResizable(win) {
+    const handle = document.createElement("div");
+    handle.className = "resize-handle";
+    win.appendChild(handle);
+    
+    handle.addEventListener("mousedown", resizeStart);
+    handle.addEventListener("touchstart", resizeStart, { passive: false });
+    
+    function resizeStart(e) {
+        if (win.classList.contains("fullscreen")) return;
+        e.preventDefault();
+        
+        win.style.transition = "none";
+        
+        if (e.touches) {
+            document.addEventListener("touchmove", resizeMove, { passive: false });
+            document.addEventListener("touchend", resizeEnd);
+        } else {
+            document.addEventListener("mousemove", resizeMove);
+            document.addEventListener("mouseup", resizeEnd);
+        }
+    }
+    
+    function resizeMove(e) {
+        if (win.classList.contains("fullscreen")) return;
+        e.preventDefault();
+        
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        const rect = win.getBoundingClientRect();
+        
+        // Calculate new dimensions relative to the top-left of the window
+        const width = clientX - rect.left;
+        const height = clientY - rect.top;
+        
+        // Constraints
+        const minWidth = 350;
+        const minHeight = 220;
+        
+        // On first resize, lock position from center to fixed position
+        if (!win.style.left || !win.style.top) {
+            win.style.position = "fixed";
+            win.style.margin = "0";
+            win.style.transform = "none";
+            win.style.left = `${rect.left}px`;
+            win.style.top = `${rect.top}px`;
+        }
+        
+        if (width >= minWidth) {
+            win.style.width = `${width}px`;
+            win.style.maxWidth = "none";
+        }
+        if (height >= minHeight) {
+            win.style.height = `${height}px`;
+            win.style.maxHeight = "none";
+        }
+    }
+    
+    function resizeEnd() {
+        document.removeEventListener("mousemove", resizeMove);
+        document.removeEventListener("mouseup", resizeEnd);
+        document.removeEventListener("touchmove", resizeMove);
+        document.removeEventListener("touchend", resizeEnd);
+        
+        win.style.transition = ""; // Restore transitions
     }
 }
