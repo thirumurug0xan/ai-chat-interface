@@ -628,6 +628,145 @@ def models_download_cancel(task_id):
     return jsonify({"success": False, "message": "No active process found for task."})
 
 
+# ── Mousepad Notes Endpoints ─────────────────────────────────────────────────
+
+NOTES_DIR = os.path.abspath(os.path.join(os.getcwd(), "notes"))
+os.makedirs(NOTES_DIR, exist_ok=True)
+
+def safe_notes_path(filename):
+    """
+    Sanitize filename and ensure it resolves inside NOTES_DIR.
+    """
+    if not filename:
+        raise ValueError("Filename is empty")
+    # Strip any directory separators to prevent directory traversal
+    filename = os.path.basename(filename)
+    if filename in (".", "..") or not filename:
+        raise ValueError("Invalid filename")
+    
+    # Secure double check
+    full_path = os.path.abspath(os.path.join(NOTES_DIR, filename))
+    if not full_path.startswith(NOTES_DIR):
+        raise ValueError("Directory traversal attempt detected")
+    return full_path
+
+@app.route("/api/notes/list", methods=["GET"])
+def notes_list():
+    """
+    List all text/markdown notes in the notes directory.
+    """
+    try:
+        notes = []
+        for filename in os.listdir(NOTES_DIR):
+            file_path = os.path.join(NOTES_DIR, filename)
+            # Only list files (not folders) and only txt/md files
+            if os.path.isfile(file_path) and (filename.endswith(".txt") or filename.endswith(".md")):
+                stat = os.stat(file_path)
+                # Load a preview of the note content (first 100 characters)
+                preview = ""
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        preview = f.read(100)
+                except Exception:
+                    pass
+                notes.append({
+                    "name": filename,
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                    "preview": preview
+                })
+        
+        # Sort notes by modification time, newest first
+        notes.sort(key=lambda n: n["mtime"], reverse=True)
+        return jsonify(notes)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notes/get", methods=["GET"])
+def notes_get():
+    """
+    Retrieve the content of a specific note.
+    """
+    filename = request.args.get("filename", "").strip()
+    try:
+        file_path = safe_notes_path(filename)
+        if not os.path.exists(file_path):
+            return jsonify({"error": f"Note '{filename}' does not exist"}), 404
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        return jsonify({
+            "filename": filename,
+            "content": content
+        })
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notes/save", methods=["POST"])
+def notes_save():
+    """
+    Create or update a note in the filesystem.
+    """
+    data = request.get_json() or {}
+    filename = data.get("filename", "").strip()
+    content = data.get("content", "")
+    
+    if not filename:
+        return jsonify({"error": "Missing filename"}), 400
+        
+    # Append default extension if missing
+    if not (filename.endswith(".txt") or filename.endswith(".md")):
+        filename += ".txt"
+        
+    try:
+        file_path = safe_notes_path(filename)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            
+        return jsonify({
+            "success": True,
+            "filename": filename,
+            "message": "Note saved successfully"
+        })
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/notes/delete", methods=["POST"])
+def notes_delete():
+    """
+    Delete a note from the filesystem.
+    """
+    data = request.get_json() or {}
+    filename = data.get("filename", "").strip()
+    
+    if not filename:
+        return jsonify({"error": "Missing filename"}), 400
+        
+    try:
+        file_path = safe_notes_path(filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            return jsonify({
+                "success": True,
+                "message": f"Note '{filename}' deleted successfully"
+            })
+        else:
+            return jsonify({"error": f"Note '{filename}' does not exist"}), 404
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Startup ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
