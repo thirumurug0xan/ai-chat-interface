@@ -32,6 +32,16 @@ const downloaderState = {
     eventSource: null,
 };
 
+const notesState = {
+    notes: [],
+    activeNoteName: null,
+    currentContent: "",
+    currentFilename: "",
+    originalContent: "",
+    originalFilename: "",
+    isUnsaved: false
+};
+
 // ── DOM References ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -176,6 +186,25 @@ const dom = {
     paletteOverlay: $("#palette-overlay"),
     paletteSearchInput: $("#palette-search-input"),
     paletteResults: $("#palette-results"),
+    // Mousepad Notes
+    btnNotes: $("#btn-notes"),
+    notesOverlay: $("#notes-modal-overlay"),
+    notesClose: $("#notes-modal-close"),
+    notesModal: $("#notes-modal"),
+    notesMinimize: $("#notes-modal-minimize"),
+    notesFullscreen: $("#notes-modal-fullscreen"),
+    btnNewNote: $("#btn-new-note"),
+    notesSearch: $("#notes-search"),
+    notesSearchClear: $("#notes-search-clear"),
+    notesList: $("#notes-list"),
+    emptyNotes: $("#empty-notes"),
+    notesFilename: $("#notes-filename"),
+    notesTextarea: $("#notes-textarea"),
+    notesStatusBadge: $("#notes-status-badge"),
+    notesWordCount: $("#notes-word-count"),
+    notesCharCount: $("#notes-char-count"),
+    btnNotesDownload: $("#btn-notes-download"),
+    btnNotesSave: $("#btn-notes-save"),
 };
 
 // ── Initialization ───────────────────────────────────────────────────────────
@@ -254,6 +283,12 @@ function initEventListeners() {
             createNewConversation();
         }
 
+        // Ctrl+M — Mousepad Notes
+        if ((e.ctrlKey || e.metaKey) && e.key === "m") {
+            e.preventDefault();
+            toggleNotesModal();
+        }
+
         // Esc — close popups, modals and command palette
         if (e.key === "Escape") {
             if (paletteState.isOpen) {
@@ -265,6 +300,7 @@ function initEventListeners() {
             closeSettingsModal();
             closeModelBrowserModal();
             closeModelDownloaderModal();
+            closeNotesModal();
         }
 
         // ? — open help (only when not typing in inputs)
@@ -536,6 +572,59 @@ function initEventListeners() {
                 e.preventDefault();
                 closePalette();
             }
+        });
+    }
+
+    // Mousepad Notes Event Listeners
+    if (dom.btnNotes) {
+        dom.btnNotes.addEventListener("click", openNotesModal);
+    }
+    if (dom.notesClose) {
+        dom.notesClose.addEventListener("click", closeNotesModal);
+    }
+    if (dom.notesOverlay) {
+        dom.notesOverlay.addEventListener("click", (e) => {
+            if (e.target === dom.notesOverlay) closeNotesModal();
+        });
+    }
+    if (dom.btnNewNote) {
+        dom.btnNewNote.addEventListener("click", createNewNote);
+    }
+    if (dom.btnNotesSave) {
+        dom.btnNotesSave.addEventListener("click", saveActiveNote);
+    }
+    if (dom.btnNotesDownload) {
+        dom.btnNotesDownload.addEventListener("click", downloadActiveNote);
+    }
+    if (dom.notesFilename) {
+        dom.notesFilename.addEventListener("input", (e) => {
+            notesState.currentFilename = e.target.value;
+            checkUnsavedChanges();
+        });
+    }
+    if (dom.notesTextarea) {
+        dom.notesTextarea.addEventListener("input", (e) => {
+            notesState.currentContent = e.target.value;
+            updateNotesCounters();
+            checkUnsavedChanges();
+        });
+    }
+    if (dom.notesSearch) {
+        dom.notesSearch.addEventListener("input", (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            if (dom.notesSearchClear) {
+                dom.notesSearchClear.style.display = query ? "block" : "none";
+            }
+            renderNotesList(query);
+        });
+    }
+    if (dom.notesSearchClear) {
+        dom.notesSearchClear.addEventListener("click", () => {
+            if (dom.notesSearch) {
+                dom.notesSearch.value = "";
+            }
+            dom.notesSearchClear.style.display = "none";
+            renderNotesList();
         });
     }
 }
@@ -2675,6 +2764,14 @@ function setupWindowControlsListeners() {
     if (dom.contextPopupFullscreen) {
         dom.contextPopupFullscreen.addEventListener("click", () => toggleFullscreen("context"));
     }
+
+    // Notes Modal Window Controls
+    if (dom.notesMinimize) {
+        dom.notesMinimize.addEventListener("click", () => minimizeWindow("notes"));
+    }
+    if (dom.notesFullscreen) {
+        dom.notesFullscreen.addEventListener("click", () => toggleFullscreen("notes"));
+    }
 }
 
 function minimizeWindow(type) {
@@ -2693,6 +2790,9 @@ function minimizeWindow(type) {
     } else if (type === "context") {
         closeContextPopup();
         if (dom.contextWindow) dom.contextWindow.classList.add("minimized-active");
+    } else if (type === "notes") {
+        closeNotesModal();
+        if (dom.btnNotes) dom.btnNotes.classList.add("minimized-active");
     }
 }
 
@@ -2703,6 +2803,7 @@ function toggleFullscreen(type) {
     else if (type === "model-browser") el = dom.modelBrowserModal;
     else if (type === "model-downloader") el = dom.modelDownloaderModal;
     else if (type === "context") el = dom.contextPopup;
+    else if (type === "notes") el = dom.notesModal;
 
     if (el) {
         el.classList.toggle("fullscreen");
@@ -2933,5 +3034,357 @@ function clearCurrentChat() {
         showToast("Conversation cleared", "info");
     } else {
         showToast("No active conversation to clear", "warning");
+    }
+}
+
+
+// ── Mousepad Notes Handlers ──────────────────────────────────────────────────
+
+async function openNotesModal() {
+    if (dom.btnNotes) dom.btnNotes.classList.remove("minimized-active");
+    
+    // Reset state & load notes list
+    notesState.activeNoteName = null;
+    notesState.currentContent = "";
+    notesState.currentFilename = "";
+    notesState.originalContent = "";
+    notesState.originalFilename = "";
+    notesState.isUnsaved = false;
+    
+    if (dom.notesFilename) dom.notesFilename.value = "";
+    if (dom.notesTextarea) dom.notesTextarea.value = "";
+    if (dom.notesSearch) dom.notesSearch.value = "";
+    if (dom.notesSearchClear) dom.notesSearchClear.style.display = "none";
+    
+    updateNotesCounters();
+    checkUnsavedChanges();
+    
+    if (dom.notesOverlay) {
+        dom.notesOverlay.classList.add("visible");
+    }
+    
+    await fetchNotesList();
+    
+    // Select first note if available
+    if (notesState.notes.length > 0) {
+        loadNote(notesState.notes[0].name);
+    } else {
+        createNewNote();
+    }
+}
+
+function closeNotesModal() {
+    if (notesState.isUnsaved) {
+        const confirmClose = confirm("You have unsaved changes in your note. Are you sure you want to close and discard changes?");
+        if (!confirmClose) return;
+    }
+    
+    if (dom.notesOverlay) {
+        dom.notesOverlay.classList.remove("visible");
+    }
+    if (dom.btnNotes) dom.btnNotes.classList.remove("minimized-active");
+    if (dom.notesModal) dom.notesModal.classList.remove("fullscreen");
+}
+
+function toggleNotesModal() {
+    if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+        closeNotesModal();
+    } else {
+        openNotesModal();
+    }
+}
+
+async function fetchNotesList() {
+    try {
+        const res = await fetch("/api/notes/list");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        const data = await res.json();
+        notesState.notes = data;
+        renderNotesList();
+    } catch (err) {
+        console.error("Failed to fetch notes list:", err);
+        showToast("Failed to load notes from server", "error");
+    }
+}
+
+function renderNotesList(filterQuery = "") {
+    const listContainer = dom.notesList;
+    const emptyState = dom.emptyNotes;
+    if (!listContainer) return;
+    
+    listContainer.innerHTML = "";
+    
+    const filteredNotes = notesState.notes.filter(note => 
+        note.name.toLowerCase().includes(filterQuery)
+    );
+    
+    if (filteredNotes.length === 0) {
+        if (emptyState) emptyState.style.display = "flex";
+        listContainer.style.display = "none";
+        return;
+    }
+    
+    if (emptyState) emptyState.style.display = "none";
+    listContainer.style.display = "block";
+    
+    filteredNotes.forEach(note => {
+        const li = document.createElement("li");
+        const isActive = notesState.activeNoteName === note.name;
+        li.className = `notes-item ${isActive ? "active" : ""}`;
+        
+        // Truncate preview
+        const previewText = note.preview ? note.preview.slice(0, 50) : "Empty note";
+        
+        li.innerHTML = `
+            <div class="notes-item-header">
+                <span class="notes-item-title" title="${escapeHtml(note.name)}">${escapeHtml(note.name)}</span>
+                <button class="notes-item-delete" title="Delete note" data-filename="${escapeHtml(note.name)}">✕</button>
+            </div>
+            <div class="notes-item-preview">${escapeHtml(previewText)}</div>
+        `;
+        
+        li.addEventListener("click", (e) => {
+            // Avoid loading note if clicking delete
+            if (e.target.classList.contains("notes-item-delete")) {
+                return;
+            }
+            if (notesState.isUnsaved) {
+                const proceed = confirm("You have unsaved changes. Discard and switch notes?");
+                if (!proceed) return;
+            }
+            loadNote(note.name);
+        });
+        
+        // Add delete button listener
+        const btnDelete = li.querySelector(".notes-item-delete");
+        if (btnDelete) {
+            btnDelete.addEventListener("click", (e) => {
+                e.stopPropagation();
+                deleteNote(note.name);
+            });
+        }
+        
+        listContainer.appendChild(li);
+    });
+}
+
+async function loadNote(filename) {
+    try {
+        const res = await fetch(`/api/notes/get?filename=${encodeURIComponent(filename)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        const data = await res.json();
+        
+        notesState.activeNoteName = data.filename;
+        notesState.currentFilename = data.filename;
+        notesState.currentContent = data.content;
+        notesState.originalFilename = data.filename;
+        notesState.originalContent = data.content;
+        notesState.isUnsaved = false;
+        
+        if (dom.notesFilename) dom.notesFilename.value = data.filename;
+        if (dom.notesTextarea) dom.notesTextarea.value = data.content;
+        
+        updateNotesCounters();
+        checkUnsavedChanges();
+        
+        // Re-render notes list to highlight active item
+        renderNotesList(dom.notesSearch ? dom.notesSearch.value.toLowerCase().trim() : "");
+    } catch (err) {
+        console.error("Failed to load note content:", err);
+        showToast(`Failed to load note '${filename}'`, "error");
+    }
+}
+
+function createNewNote() {
+    if (notesState.isUnsaved) {
+        const proceed = confirm("You have unsaved changes. Discard and create new note?");
+        if (!proceed) return;
+    }
+    
+    // Generate a unique filename that doesn't exist yet
+    let baseNum = 1;
+    let newFilename = "untitled.txt";
+    while (notesState.notes.some(n => n.name === newFilename)) {
+        newFilename = `untitled_${baseNum}.txt`;
+        baseNum++;
+    }
+    
+    notesState.activeNoteName = null;
+    notesState.currentFilename = newFilename;
+    notesState.currentContent = "";
+    notesState.originalFilename = "";
+    notesState.originalContent = "";
+    notesState.isUnsaved = true; // New empty unsaved state
+    
+    if (dom.notesFilename) dom.notesFilename.value = newFilename;
+    if (dom.notesTextarea) dom.notesTextarea.value = "";
+    
+    updateNotesCounters();
+    checkUnsavedChanges();
+    
+    // Clear list selection
+    renderNotesList(dom.notesSearch ? dom.notesSearch.value.toLowerCase().trim() : "");
+}
+
+async function saveActiveNote() {
+    let filename = dom.notesFilename ? dom.notesFilename.value.trim() : "";
+    const content = dom.notesTextarea ? dom.notesTextarea.value : "";
+    
+    if (!filename) {
+        showToast("Please enter a valid filename", "warning");
+        return;
+    }
+    
+    // Validate filename formatting
+    if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+        showToast("Invalid filename. Subdirectories are not allowed.", "error");
+        return;
+    }
+    
+    // Default format if no extension
+    if (!filename.endsWith(".txt") && !filename.endsWith(".md")) {
+        filename += ".txt";
+        if (dom.notesFilename) dom.notesFilename.value = filename;
+    }
+    
+    try {
+        const res = await fetch("/api/notes/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename, content })
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+        
+        const data = await res.json();
+        showToast(data.message || "Note saved successfully!", "success");
+        
+        // Update state
+        notesState.activeNoteName = data.filename;
+        notesState.currentFilename = data.filename;
+        notesState.currentContent = content;
+        notesState.originalFilename = data.filename;
+        notesState.originalContent = content;
+        notesState.isUnsaved = false;
+        
+        checkUnsavedChanges();
+        
+        // Refresh notes list and content
+        await fetchNotesList();
+        renderNotesList(dom.notesSearch ? dom.notesSearch.value.toLowerCase().trim() : "");
+    } catch (err) {
+        console.error("Failed to save note:", err);
+        showToast(`Failed to save note: ${err.message}`, "error");
+    }
+}
+
+async function deleteNote(filename) {
+    const proceed = confirm(`Are you sure you want to delete note '${filename}'? This cannot be undone.`);
+    if (!proceed) return;
+    
+    try {
+        const res = await fetch("/api/notes/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename })
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+        
+        showToast(`Deleted note '${filename}'`, "info");
+        
+        // If the active note was deleted, reset state
+        if (notesState.activeNoteName === filename) {
+            notesState.activeNoteName = null;
+            notesState.currentFilename = "";
+            notesState.currentContent = "";
+            notesState.originalFilename = "";
+            notesState.originalContent = "";
+            notesState.isUnsaved = false;
+            
+            if (dom.notesFilename) dom.notesFilename.value = "";
+            if (dom.notesTextarea) dom.notesTextarea.value = "";
+            
+            updateNotesCounters();
+            checkUnsavedChanges();
+        }
+        
+        await fetchNotesList();
+        
+        // Select next/first note if available
+        if (notesState.notes.length > 0 && !notesState.activeNoteName) {
+            loadNote(notesState.notes[0].name);
+        } else if (notesState.notes.length === 0) {
+            createNewNote();
+        }
+    } catch (err) {
+        console.error("Failed to delete note:", err);
+        showToast(`Failed to delete note: ${err.message}`, "error");
+    }
+}
+
+function downloadActiveNote() {
+    const filename = dom.notesFilename ? dom.notesFilename.value.trim() : "note.txt";
+    const content = dom.notesTextarea ? dom.notesTextarea.value : "";
+    
+    try {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast("Note downloaded locally!", "success");
+    } catch (err) {
+        console.error("Download failed:", err);
+        showToast("Failed to download note locally", "error");
+    }
+}
+
+function updateNotesCounters() {
+    const content = notesState.currentContent || "";
+    
+    // Character count
+    const charCount = content.length;
+    if (dom.notesCharCount) dom.notesCharCount.textContent = `${charCount} chars`;
+    
+    // Word count
+    const words = content.trim().split(/\s+/).filter(w => w.length > 0);
+    const wordCount = words.length;
+    if (dom.notesWordCount) dom.notesWordCount.textContent = `${wordCount} words`;
+}
+
+function checkUnsavedChanges() {
+    const filenameInput = dom.notesFilename ? dom.notesFilename.value.trim() : "";
+    const contentInput = dom.notesTextarea ? dom.notesTextarea.value : "";
+    
+    const nameChanged = filenameInput !== notesState.originalFilename;
+    const contentChanged = contentInput !== notesState.originalContent;
+    
+    notesState.isUnsaved = nameChanged || contentChanged;
+    
+    const badge = dom.notesStatusBadge;
+    if (badge) {
+        if (notesState.isUnsaved) {
+            badge.textContent = "Unsaved Changes";
+            badge.className = "notes-status-badge unsaved";
+        } else {
+            badge.textContent = "Saved";
+            badge.className = "notes-status-badge";
+        }
     }
 }

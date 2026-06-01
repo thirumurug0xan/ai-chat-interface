@@ -217,6 +217,9 @@
                     <button class="btn-header-action" id="btn-export" title="Export conversation as JSON">
                         <span class="header-action-icon">📥</span>
                     </button>
+                    <button class="btn-header-action" id="btn-notes" title="Mousepad Notes (Ctrl+M or 📝)">
+                        <span class="header-action-icon">📝</span>
+                    </button>
                     <button class="btn-header-action" id="btn-settings" title="Inference Settings">
                         <span class="header-action-icon">⚙️</span>
                     </button>
@@ -775,6 +778,72 @@
                 <div class="downloader-actions">
                     <button class="btn-downloader-close" id="btn-downloader-close">Close</button>
                     <button class="btn-downloader-start" id="btn-downloader-start" disabled>Start Export</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mousepad Notes Modal -->
+    <div class="modal-overlay" id="notes-modal-overlay">
+        <div class="modal notes-modal" id="notes-modal">
+            <div class="modal-header">
+                <div class="window-controls">
+                    <button class="control-btn btn-close" id="notes-modal-close" title="Close">✕</button>
+                    <button class="control-btn btn-minimize" id="notes-modal-minimize" title="Minimize">─</button>
+                    <button class="control-btn btn-fullscreen" id="notes-modal-fullscreen" title="Fullscreen">⤢</button>
+                </div>
+                <div class="modal-title">
+                    <span class="modal-title-icon">📝</span>
+                    <span>Mousepad Notes</span>
+                </div>
+            </div>
+            <div class="modal-body notes-modal-body">
+                <div class="notes-layout">
+                    <!-- Left sidebar: note list -->
+                    <div class="notes-sidebar">
+                        <button class="btn-new-note" id="btn-new-note" title="Create a new note">
+                            <span>＋</span> New Note
+                        </button>
+                        <div class="notes-search-wrapper">
+                            <input type="text" id="notes-search" placeholder="Search notes..." autocomplete="off">
+                            <span class="notes-search-clear" id="notes-search-clear" style="display: none;">✕</span>
+                        </div>
+                        <ul class="notes-list" id="notes-list">
+                            <!-- Populated dynamically -->
+                        </ul>
+                        <div class="empty-notes" id="empty-notes">
+                            <div class="empty-notes-icon">📝</div>
+                            <div>No notes found</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right content: note editor -->
+                    <div class="notes-editor-pane">
+                        <div class="notes-editor-header">
+                            <input type="text" id="notes-filename" class="notes-filename-input" placeholder="filename.txt" title="Filename for saving note">
+                        </div>
+                        <div class="notes-editor-body">
+                            <textarea id="notes-textarea" class="notes-textarea" placeholder="Start typing your note here..."></textarea>
+                        </div>
+                        <div class="notes-editor-footer">
+                            <div class="notes-status-left">
+                                <span class="notes-status-badge" id="notes-status-badge">Saved</span>
+                            </div>
+                            <div class="notes-status-right">
+                                <span class="notes-word-count" id="notes-word-count">0 words</span>
+                                <span class="notes-char-count" id="notes-char-count">0 chars</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer notes-modal-footer">
+                <div class="notes-footer-info">
+                    Saved in server's filesystem under <code>/notes</code>.
+                </div>
+                <div class="notes-actions">
+                    <button class="btn-notes-download" id="btn-notes-download" title="Download note locally to your machine">📥 Download</button>
+                    <button class="btn-notes-save" id="btn-notes-save" title="Save changes to server filesystem">💾 Save Note</button>
                 </div>
             </div>
         </div>
