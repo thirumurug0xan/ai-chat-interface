@@ -218,7 +218,38 @@ const dom = {
     chkSyntaxHighlight: $("#chk-syntax-highlight"),
     selTabSize: $("#sel-tab-size"),
     notesHighlightPre: $("#notes-highlight-pre"),
+    notesCurrentDirDisplay: $("#notes-current-dir-display"),
 };
+
+// ── Window Stacking Management ───────────────────────────────────────────────
+let highestZIndex = 900;
+const openOverlaysStack = [];
+
+function bringToFront(overlay) {
+    if (!overlay) return;
+    highestZIndex++;
+    overlay.style.zIndex = highestZIndex;
+}
+
+function openOverlay(overlayEl) {
+    if (!overlayEl) return;
+    const idx = openOverlaysStack.indexOf(overlayEl);
+    if (idx !== -1) {
+        openOverlaysStack.splice(idx, 1);
+    }
+    overlayEl.classList.add("visible");
+    bringToFront(overlayEl);
+    openOverlaysStack.push(overlayEl);
+}
+
+function closeOverlay(overlayEl) {
+    if (!overlayEl) return;
+    overlayEl.classList.remove("visible");
+    const idx = openOverlaysStack.indexOf(overlayEl);
+    if (idx !== -1) {
+        openOverlaysStack.splice(idx, 1);
+    }
+}
 
 // ── Initialization ───────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -291,10 +322,14 @@ function initEventListeners() {
             return;
         }
 
-        // Ctrl+N — new chat
+        // Ctrl+N — new chat or new note (if notes modal is visible)
         if ((e.ctrlKey || e.metaKey) && e.key === "n") {
             e.preventDefault();
-            createNewConversation();
+            if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+                createNewNote();
+            } else {
+                createNewConversation();
+            }
         }
 
         // Ctrl+M — Mousepad Notes
@@ -303,18 +338,38 @@ function initEventListeners() {
             toggleNotesModal();
         }
 
+        // Ctrl+S — save active note (if notes modal is visible)
+        if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+            if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+                e.preventDefault();
+                saveActiveNote();
+            }
+        }
+
+        // Ctrl+O — open folder browser (if notes modal is visible)
+        if ((e.ctrlKey || e.metaKey) && e.key === "o") {
+            if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+                e.preventDefault();
+                if (dom.btnTbOpen) dom.btnTbOpen.click();
+            }
+        }
+
         // Esc — close popups, modals and command palette
         if (e.key === "Escape") {
             if (paletteState.isOpen) {
                 closePalette();
                 return;
             }
+            if (openOverlaysStack.length > 0) {
+                const topOverlay = openOverlaysStack[openOverlaysStack.length - 1];
+                if (topOverlay === dom.helpModalOverlay) closeHelpModal();
+                else if (topOverlay === dom.settingsModalOverlay) closeSettingsModal();
+                else if (topOverlay === dom.modelBrowserOverlay) closeModelBrowserModal();
+                else if (topOverlay === dom.modelDownloaderOverlay) closeModelDownloaderModal();
+                else if (topOverlay === dom.notesOverlay) closeNotesModal();
+                return;
+            }
             closeContextPopup();
-            closeHelpModal();
-            closeSettingsModal();
-            closeModelBrowserModal();
-            closeModelDownloaderModal();
-            closeNotesModal();
         }
 
         // ? — open help (only when not typing in inputs)
@@ -640,7 +695,6 @@ function initEventListeners() {
                 fsState.currentPath = "";
             }
             openModelBrowserModal();
-            loadDirectoryContents(fsState.currentPath);
         });
     }
     if (dom.btnTbSettings) {
@@ -742,6 +796,13 @@ function initEventListeners() {
             openModelBrowserModal();
         });
     }
+
+    // Bring modal overlay to front on mousedown/click
+    $$(".modal-overlay").forEach((overlay) => {
+        overlay.addEventListener("mousedown", () => {
+            bringToFront(overlay);
+        });
+    });
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -1804,11 +1865,11 @@ function closeContextPopup() {
 // ── Help Modal ────────────────────────────────────────────────────────────
 function openHelpModal() {
     if (dom.btnHelp) dom.btnHelp.classList.remove("minimized-active");
-    dom.helpModalOverlay.classList.add("visible");
+    openOverlay(dom.helpModalOverlay);
 }
 
 function closeHelpModal() {
-    dom.helpModalOverlay.classList.remove("visible");
+    closeOverlay(dom.helpModalOverlay);
     if (dom.btnHelp) dom.btnHelp.classList.remove("minimized-active");
     if (dom.helpModal) dom.helpModal.classList.remove("fullscreen");
 }
@@ -1859,11 +1920,11 @@ function openSettingsModal() {
         const friendly = state.modelConfig.device_friendly || state.modelConfig.device || "—";
         updateDeviceSelectorUI(state.modelConfig.requested_device || "AUTO", friendly, state.modelConfig.available_devices);
     }
-    dom.settingsModalOverlay.classList.add("visible");
+    openOverlay(dom.settingsModalOverlay);
 }
 
 function closeSettingsModal() {
-    dom.settingsModalOverlay.classList.remove("visible");
+    closeOverlay(dom.settingsModalOverlay);
     if (dom.btnSettings) dom.btnSettings.classList.remove("minimized-active");
     if (dom.settingsModal) dom.settingsModal.classList.remove("fullscreen");
 }
@@ -2145,14 +2206,14 @@ function openModelBrowserModal() {
     }
 
     if (dom.modelBrowserOverlay) {
-        dom.modelBrowserOverlay.classList.add("visible");
+        openOverlay(dom.modelBrowserOverlay);
     }
     renderRootTree();
 }
 
 function closeModelBrowserModal() {
     if (dom.modelBrowserOverlay) {
-        dom.modelBrowserOverlay.classList.remove("visible");
+        closeOverlay(dom.modelBrowserOverlay);
     }
     if (dom.btnSwitchModel) dom.btnSwitchModel.classList.remove("minimized-active");
     if (dom.modelBrowserModal) dom.modelBrowserModal.classList.remove("fullscreen");
@@ -2526,13 +2587,13 @@ async function loadModelFromPath() {
 
 function openModelDownloaderModal() {
     if (dom.btnDownloadModel) dom.btnDownloadModel.classList.remove("minimized-active");
-    dom.modelDownloaderOverlay.classList.add("visible");
+    openOverlay(dom.modelDownloaderOverlay);
     // Check if there is an active running download on the server to resume monitoring
     checkActiveDownloadsAndResume();
 }
 
 function closeModelDownloaderModal() {
-    dom.modelDownloaderOverlay.classList.remove("visible");
+    closeOverlay(dom.modelDownloaderOverlay);
     if (dom.btnDownloadModel) dom.btnDownloadModel.classList.remove("minimized-active");
     if (dom.modelDownloaderModal) dom.modelDownloaderModal.classList.remove("fullscreen");
 }
@@ -3215,7 +3276,7 @@ async function openNotesModal() {
     checkUnsavedChanges();
     
     if (dom.notesOverlay) {
-        dom.notesOverlay.classList.add("visible");
+        openOverlay(dom.notesOverlay);
     }
     
     // Fetch current notes directory path
@@ -3225,6 +3286,9 @@ async function openNotesModal() {
             const data = await res.json();
             if (dom.notesDirInput) {
                 dom.notesDirInput.value = data.path;
+            }
+            if (dom.notesCurrentDirDisplay) {
+                dom.notesCurrentDirDisplay.textContent = data.path;
             }
         }
     } catch (err) {
@@ -3253,7 +3317,7 @@ function closeNotesModal() {
     }
     
     if (dom.notesOverlay) {
-        dom.notesOverlay.classList.remove("visible");
+        closeOverlay(dom.notesOverlay);
     }
     if (dom.btnNotes) dom.btnNotes.classList.remove("minimized-active");
     if (dom.notesModal) dom.notesModal.classList.remove("fullscreen");
@@ -3588,6 +3652,9 @@ async function saveNotesDirectory() {
         showToast(data.message || "Storage directory updated successfully", "success");
         if (dom.notesDirInput) {
             dom.notesDirInput.value = data.path;
+        }
+        if (dom.notesCurrentDirDisplay) {
+            dom.notesCurrentDirDisplay.textContent = data.path;
         }
         
         // Reload notes list for the new directory
