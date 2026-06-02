@@ -3123,7 +3123,6 @@ function minimizeWindow(type) {
         triggerBtn = dom.btnSettings;
         closeFunc = () => {
             closeOverlay(overlayEl);
-            if (triggerBtn) triggerBtn.classList.remove("minimized-active");
             if (modalEl) modalEl.classList.remove("fullscreen");
         };
     } else if (type === "help") {
@@ -3132,7 +3131,6 @@ function minimizeWindow(type) {
         triggerBtn = dom.btnHelp;
         closeFunc = () => {
             closeOverlay(overlayEl);
-            if (triggerBtn) triggerBtn.classList.remove("minimized-active");
             if (modalEl) modalEl.classList.remove("fullscreen");
         };
     } else if (type === "model-browser") {
@@ -3141,7 +3139,6 @@ function minimizeWindow(type) {
         triggerBtn = dom.btnSwitchModel;
         closeFunc = () => {
             closeOverlay(overlayEl);
-            if (triggerBtn) triggerBtn.classList.remove("minimized-active");
             if (modalEl) modalEl.classList.remove("fullscreen");
             
             // Restore default texts
@@ -3156,17 +3153,16 @@ function minimizeWindow(type) {
         triggerBtn = dom.btnDownloadModel;
         closeFunc = () => {
             closeOverlay(overlayEl);
-            if (triggerBtn) triggerBtn.classList.remove("minimized-active");
             if (modalEl) modalEl.classList.remove("fullscreen");
         };
     } else if (type === "context") {
         modalEl = dom.contextPopup;
+        triggerBtn = dom.contextWindow;
         closeFunc = () => {
             if (modalEl) {
                 modalEl.classList.remove("visible");
                 modalEl.classList.remove("fullscreen");
             }
-            if (dom.contextWindow) dom.contextWindow.classList.remove("minimized-active");
         };
     } else if (type === "notes") {
         modalEl = dom.notesModal;
@@ -3174,7 +3170,6 @@ function minimizeWindow(type) {
         triggerBtn = dom.btnNotes;
         closeFunc = () => {
             closeOverlay(overlayEl);
-            if (triggerBtn) triggerBtn.classList.remove("minimized-active");
             if (modalEl) modalEl.classList.remove("fullscreen");
         };
     }
@@ -3442,7 +3437,22 @@ const notesTabState = {
 };
 
 async function openNotesModal() {
-    if (dom.btnNotes) dom.btnNotes.classList.remove("minimized-active");
+    // If already visible, just bring to front
+    if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+        bringToFront(dom.notesOverlay);
+        return;
+    }
+
+    if (dom.btnNotes) {
+        if (dom.btnNotes.classList.contains("minimized-active")) {
+            dom.btnNotes.classList.remove("minimized-active");
+            if (dom.notesOverlay) {
+                openOverlay(dom.notesOverlay);
+            }
+            return;
+        }
+        dom.btnNotes.classList.remove("minimized-active");
+    }
     
     // Clear tabs first and reset
     notesTabState.openTabs = [];
