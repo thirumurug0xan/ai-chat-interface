@@ -354,11 +354,15 @@ function initEventListeners() {
             toggleNotesModal();
         }
 
-        // Ctrl+S — save active note (if notes modal is visible)
-        if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        // Ctrl+S / Ctrl+Shift+S — save note (if notes modal is visible)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
             if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
                 e.preventDefault();
-                saveActiveNote();
+                if (e.shiftKey) {
+                    saveNoteAs();
+                } else {
+                    saveActiveNote();
+                }
             }
         }
 
@@ -366,7 +370,7 @@ function initEventListeners() {
         if ((e.ctrlKey || e.metaKey) && e.key === "o") {
             if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
                 e.preventDefault();
-                if (dom.btnTbOpen) dom.btnTbOpen.click();
+                openNotesFolderBrowser();
             }
         }
 
@@ -3598,6 +3602,41 @@ async function saveActiveNote() {
     }
 }
 
+async function saveNoteAs() {
+    const currentName = dom.notesFilename ? dom.notesFilename.value.trim() : (notesState.currentFilename || "untitled.txt");
+    let newFilename = prompt("Save As - Enter new filename:", currentName);
+    if (newFilename === null) return; // User cancelled
+    
+    newFilename = newFilename.trim();
+    if (!newFilename) {
+        showToast("Filename cannot be empty", "warning");
+        return;
+    }
+    
+    // Default format if no extension
+    if (!newFilename.endsWith(".txt") && !newFilename.endsWith(".md")) {
+        newFilename += ".txt";
+    }
+    
+    if (dom.notesFilename) {
+        dom.notesFilename.value = newFilename;
+    }
+    notesState.currentFilename = newFilename;
+    
+    await saveActiveNote();
+}
+
+function openNotesFolderBrowser() {
+    fsState.selectorMode = "notes";
+    const val = dom.notesDirInput ? dom.notesDirInput.value.trim() : "";
+    if (val) {
+        fsState.currentPath = val;
+    } else {
+        fsState.currentPath = "";
+    }
+    openModelBrowserModal();
+}
+
 async function deleteNote(filename) {
     const proceed = confirm(`Are you sure you want to delete note '${filename}'? This cannot be undone.`);
     if (!proceed) return;
@@ -4331,12 +4370,15 @@ function initGtkMenuBar() {
     
     const fileOpen = $("#menu-file-open");
     if (fileOpen) fileOpen.addEventListener("click", () => {
-        if (dom.btnTbOpen) dom.btnTbOpen.click();
+        openNotesFolderBrowser();
         closeGtkMenus();
     });
     
     const fileSave = $("#menu-file-save");
     if (fileSave) fileSave.addEventListener("click", () => { saveActiveNote(); closeGtkMenus(); });
+    
+    const fileSaveAs = $("#menu-file-saveas");
+    if (fileSaveAs) fileSaveAs.addEventListener("click", () => { saveNoteAs(); closeGtkMenus(); });
     
     const fileDownload = $("#menu-file-download");
     if (fileDownload) fileDownload.addEventListener("click", () => { downloadActiveNote(); closeGtkMenus(); });
