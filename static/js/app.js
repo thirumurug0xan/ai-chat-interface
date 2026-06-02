@@ -2242,8 +2242,8 @@ function openModelBrowserModal() {
     if (dom.btnSwitchModel) dom.btnSwitchModel.classList.remove("minimized-active");
     
     if (fsState.selectorMode === "notes") {
-        const titleEl = dom.modelBrowserModal ? dom.modelBrowserModal.querySelector(".modal-title span") : null;
-        if (titleEl) titleEl.textContent = "Select Notes Storage Folder";
+        const titleEl = document.getElementById("model-browser-title-text");
+        if (titleEl) titleEl.textContent = "Select Notes Folder / File";
         if (dom.btnFsConfirm) dom.btnFsConfirm.textContent = "Select Folder";
         
         if (dom.notesDirInput && dom.notesDirInput.value.trim()) {
@@ -2252,7 +2252,7 @@ function openModelBrowserModal() {
             fsState.currentPath = "";
         }
     } else {
-        const titleEl = dom.modelBrowserModal ? dom.modelBrowserModal.querySelector(".modal-title span") : null;
+        const titleEl = document.getElementById("model-browser-title-text");
         if (titleEl) titleEl.textContent = "Select Local OpenVINO Model";
         if (dom.btnFsConfirm) dom.btnFsConfirm.textContent = "Load Model";
         
@@ -2293,7 +2293,7 @@ function closeModelBrowserModal() {
     if (dom.modelBrowserModal) dom.modelBrowserModal.classList.remove("fullscreen");
     
     // Restore default texts
-    const titleEl = dom.modelBrowserModal ? dom.modelBrowserModal.querySelector(".modal-title span") : null;
+    const titleEl = document.getElementById("model-browser-title-text");
     if (titleEl) titleEl.textContent = "Select Local OpenVINO Model";
     if (dom.btnFsConfirm) dom.btnFsConfirm.textContent = "Load Model";
     
@@ -2464,6 +2464,7 @@ async function loadAndRenderChildren(path, containerEl, level) {
 
 function selectFsItem(entry) {
     fsState.selectedPath = entry.path;
+    fsState.selectedPathIsDir = entry.is_dir;
     if (dom.fsSelectedPath) {
         dom.fsSelectedPath.textContent = entry.path;
     }
@@ -2480,6 +2481,14 @@ function selectFsItem(entry) {
         });
     }
 
+    if (dom.btnFsConfirm) {
+        if (fsState.selectorMode === "notes") {
+            dom.btnFsConfirm.textContent = entry.is_dir ? "Select Folder" : "Open File";
+        } else {
+            dom.btnFsConfirm.textContent = "Load Model";
+        }
+    }
+
     renderDetailsPane(entry);
 }
 
@@ -2487,20 +2496,34 @@ async function renderDetailsPane(entry) {
     const pane = dom.fsItemDetails;
     if (!pane) return;
 
-    pane.innerHTML = `<div class="fs-tree-loading" style="padding: 10px;">Reading folder details...</div>`;
+    pane.innerHTML = `<div class="fs-tree-loading" style="padding: 10px;">Reading details...</div>`;
 
     if (!entry.is_dir) {
-        pane.innerHTML = `
-            <div class="fs-details-card">
-                <div class="fs-details-title">${escapeHtml(entry.name)}</div>
-                <div class="fs-details-path">${escapeHtml(entry.path)}</div>
-                <div class="fs-model-badge invalid">📄 File</div>
-                <div style="font-size: 12px; color: var(--text-tertiary); line-height: 1.6; margin-top: 10px;">
-                    This is a file. OpenVINO models are loaded from directories. Please select the folder containing the model files.
+        if (fsState.selectorMode === "notes") {
+            pane.innerHTML = `
+                <div class="fs-details-card">
+                    <div class="fs-details-title">${escapeHtml(entry.name)}</div>
+                    <div class="fs-details-path">${escapeHtml(entry.path)}</div>
+                    <div class="fs-model-badge valid" style="background: rgba(46, 213, 115, 0.15); color: #2ed573;">📄 Note File</div>
+                    <div style="font-size: 12px; color: var(--text-tertiary); line-height: 1.6; margin-top: 10px;">
+                        Select this file to open it in Mousepad. The notes directory will be set to its parent folder.
+                    </div>
                 </div>
-            </div>
-        `;
-        if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = true;
+            `;
+            if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+        } else {
+            pane.innerHTML = `
+                <div class="fs-details-card">
+                    <div class="fs-details-title">${escapeHtml(entry.name)}</div>
+                    <div class="fs-details-path">${escapeHtml(entry.path)}</div>
+                    <div class="fs-model-badge invalid">📄 File</div>
+                    <div style="font-size: 12px; color: var(--text-tertiary); line-height: 1.6; margin-top: 10px;">
+                        This is a file. OpenVINO models are loaded from directories. Please select the folder containing the model files.
+                    </div>
+                </div>
+            `;
+            if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = true;
+        }
         return;
     }
 
@@ -2520,23 +2543,33 @@ async function renderDetailsPane(entry) {
         }
 
         const filesList = entries || [];
-        const xmlFiles = filesList.filter(f => !f.is_dir && f.name.endsWith(".xml"));
-        const hasXmlModel = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "openvino_model.xml");
-        const isValidModel = xmlFiles.length > 0 || hasXmlModel;
-
+        
         let badgeHtml = "";
         let warningHtml = "";
-        if (isValidModel) {
-            badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
-            if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
-        } else {
-            badgeHtml = `<div class="fs-model-badge invalid">⚠️ Regular Folder</div>`;
+        if (fsState.selectorMode === "notes") {
+            badgeHtml = `<div class="fs-model-badge valid" style="background: rgba(46, 213, 115, 0.15); color: #2ed573;">📁 Notes Folder</div>`;
             warningHtml = `
-                <div style="font-size: 11.5px; color: #ffa502; line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 165, 2, 0.05); border: 1px solid rgba(255, 165, 2, 0.15); border-radius: 6px;">
-                    <strong>Note:</strong> No model XML files detected in this folder. Loading it as a model path might fail unless it contains valid config/model files.
+                <div style="font-size: 11.5px; color: var(--text-secondary); line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: 6px;">
+                    Select this directory to load its text/markdown notes into Mousepad.
                 </div>
             `;
             if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+        } else {
+            const xmlFiles = filesList.filter(f => !f.is_dir && f.name.endsWith(".xml"));
+            const hasXmlModel = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "openvino_model.xml");
+            const isValidModel = xmlFiles.length > 0 || hasXmlModel;
+            if (isValidModel) {
+                badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
+                if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+            } else {
+                badgeHtml = `<div class="fs-model-badge invalid">⚠️ Regular Folder</div>`;
+                warningHtml = `
+                    <div style="font-size: 11.5px; color: #ffa502; line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 165, 2, 0.05); border: 1px solid rgba(255, 165, 2, 0.15); border-radius: 6px;">
+                        <strong>Note:</strong> No model XML files detected in this folder. Loading it as a model path might fail unless it contains valid config/model files.
+                    </div>
+                `;
+                if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
+            }
         }
 
         let filesHtml = "";
@@ -2590,11 +2623,23 @@ async function handleFsConfirm() {
     if (!fsState.selectedPath) return;
 
     if (fsState.selectorMode === "notes") {
+        let folderPath = fsState.selectedPath;
+        let filenameToLoad = null;
+
+        if (!fsState.selectedPathIsDir) {
+            // It's a file!
+            const lastSlash = fsState.selectedPath.lastIndexOf("/");
+            if (lastSlash !== -1) {
+                folderPath = fsState.selectedPath.substring(0, lastSlash);
+                filenameToLoad = fsState.selectedPath.substring(lastSlash + 1);
+            }
+        }
+
         if (dom.notesDirInput) {
-            dom.notesDirInput.value = fsState.selectedPath;
+            dom.notesDirInput.value = folderPath;
         }
         closeModelBrowserModal();
-        await saveNotesDirectory();
+        await saveNotesDirectory(folderPath, filenameToLoad);
     } else {
         await loadModelFromPath();
     }
@@ -3752,8 +3797,8 @@ function checkUnsavedChanges() {
     updateCursorPosition();
 }
 
-async function saveNotesDirectory() {
-    const inputPath = dom.notesDirInput ? dom.notesDirInput.value.trim() : "";
+async function saveNotesDirectory(customPath = null, filenameToLoad = null) {
+    const inputPath = customPath || (dom.notesDirInput ? dom.notesDirInput.value.trim() : "");
     if (!inputPath) {
         showToast("Please enter a folder path", "warning");
         return;
@@ -3784,7 +3829,9 @@ async function saveNotesDirectory() {
         await fetchNotesList();
         
         // Select first note in the new folder if available, else new note
-        if (notesState.notes.length > 0) {
+        if (filenameToLoad) {
+            await loadNote(filenameToLoad);
+        } else if (notesState.notes.length > 0) {
             await loadNote(notesState.notes[0].name);
         } else {
             notesState.activeNoteName = null;
