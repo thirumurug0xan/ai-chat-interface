@@ -376,6 +376,14 @@ function initEventListeners() {
             }
         }
 
+        // F2 — Rename note (if notes modal is visible)
+        if (e.key === "F2") {
+            if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+                e.preventDefault();
+                renameActiveNote();
+            }
+        }
+
         // Ctrl+F — find & replace (if notes modal is visible)
         if ((e.ctrlKey || e.metaKey) && e.key === "f") {
             if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
@@ -3194,8 +3202,50 @@ function toggleFullscreen(type) {
     else if (type === "context") el = dom.contextPopup;
     else if (type === "notes") el = dom.notesModal;
 
-    if (el) {
-        el.classList.toggle("fullscreen");
+    if (!el) return;
+
+    const isEntering = !el.classList.contains("fullscreen");
+    const isDragged = !!(el.style.left && el.style.top);
+
+    if (isEntering) {
+        if (!isDragged) {
+            const rect = el.getBoundingClientRect();
+            el.style.position = "fixed";
+            el.style.margin = "0";
+            el.style.transform = "none";
+            el.style.left = `${rect.left}px`;
+            el.style.top = `${rect.top}px`;
+            el.style.width = `${rect.width}px`;
+            el.style.height = `${rect.height}px`;
+            el.dataset.wasAutoFrozen = "true";
+        }
+        
+        // Force reflow
+        el.offsetHeight;
+        
+        el.classList.add("fullscreen");
+    } else {
+        el.classList.remove("fullscreen");
+        
+        const wasAutoFrozen = el.dataset.wasAutoFrozen === "true";
+        if (wasAutoFrozen) {
+            const handleTransitionEnd = (e) => {
+                if (e.propertyName === "width" || e.propertyName === "height") {
+                    el.removeEventListener("transitionend", handleTransitionEnd);
+                    if (!el.classList.contains("fullscreen") && el.dataset.wasAutoFrozen === "true") {
+                        el.style.position = "";
+                        el.style.margin = "";
+                        el.style.transform = "";
+                        el.style.left = "";
+                        el.style.top = "";
+                        el.style.width = "";
+                        el.style.height = "";
+                        delete el.dataset.wasAutoFrozen;
+                    }
+                }
+            };
+            el.addEventListener("transitionend", handleTransitionEnd);
+        }
     }
 }
 
@@ -3682,6 +3732,11 @@ function renderTabs() {
             }
         });
         
+        tabEl.addEventListener("dblclick", (e) => {
+            e.stopPropagation();
+            renameActiveNote();
+        });
+        
         tabContainer.insertBefore(tabEl, addBtn);
     });
 }
@@ -3806,6 +3861,99 @@ async function saveNoteAs() {
     } catch (err) {
         console.error("Save As failed:", err);
         showToast(`Save As failed: ${err.message}`, "error");
+    }
+}
+
+async function renameActiveNote() {
+    const currentName = notesTabState.activeFilename;
+    if (!currentName) {
+        showToast("No active note to rename", "warning");
+        return;
+    }
+    
+    let newFilename = prompt("Rename Note - Enter new filename:", currentName);
+    if (newFilename === null) return; // User cancelled
+    
+    newFilename = newFilename.trim();
+    if (!newFilename) {
+        showToast("Filename cannot be empty", "warning");
+        return;
+    }
+    
+    // Add extension if not present
+    if (!newFilename.endsWith(".txt") && !newFilename.endsWith(".md")) {
+        newFilename += ".txt";
+    }
+    
+    if (newFilename === currentName) return; // No change
+    
+    if (newFilename.includes("/") || newFilename.includes("\\") || newFilename.includes("..")) {
+        showToast("Invalid filename. Subdirectories are not allowed.", "error");
+        return;
+    }
+    
+    // Check if new filename already exists in current tabs
+    const existsInTabs = notesTabState.openTabs.some(t => t.filename.toLowerCase() === newFilename.toLowerCase());
+    if (existsInTabs) {
+        showToast(`A note named '${newFilename}' is already open in tabs`, "error");
+        return;
+    }
+
+    // Check if it's a completely local unsaved/untitled note that doesn't exist on disk yet
+    const existsOnServer = notesState.notes.some(n => n.name.toLowerCase() === newFilename.toLowerCase());
+    const isLocalOnly = !notesState.notes.some(n => n.name === currentName);
+    
+    if (isLocalOnly) {
+        if (existsOnServer) {
+            showToast(`A note named '${newFilename}' already exists in notes folder`, "error");
+            return;
+        }
+        
+        // Update local tab filename
+        const activeTab = notesTabState.openTabs.find(t => t.filename === currentName);
+        if (activeTab) {
+            activeTab.filename = newFilename;
+        }
+        notesTabState.activeFilename = newFilename;
+        notesState.activeNoteName = newFilename;
+        notesState.currentFilename = newFilename;
+        
+        checkUnsavedChanges();
+        renderTabs();
+        showToast("Note renamed locally", "success");
+        return;
+    }
+    
+    // Otherwise it exists on the server, call the api
+    try {
+        const res = await fetch("/api/notes/rename", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ old_filename: currentName, new_filename: newFilename })
+        });
+        
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        
+        const data = await res.json();
+        showToast(data.message || "Note renamed successfully", "success");
+        
+        const activeTab = notesTabState.openTabs.find(t => t.filename === currentName);
+        if (activeTab) {
+            activeTab.filename = data.filename;
+        }
+        notesTabState.activeFilename = data.filename;
+        notesState.activeNoteName = data.filename;
+        notesState.currentFilename = data.filename;
+        
+        checkUnsavedChanges();
+        await fetchNotesList();
+        renderTabs();
+    } catch (err) {
+        console.error("Failed to rename note:", err);
+        showToast(`Rename failed: ${err.message}`, "error");
     }
 }
 
@@ -4168,6 +4316,16 @@ function initWindowDraggingAndResizing() {
     // Reset positions whenever modals are opened to re-center them initially
     const resetWindowStyle = (win) => {
         if (!win) return;
+        
+        let isMinimized = false;
+        if (win === dom.settingsModal && dom.btnSettings && dom.btnSettings.classList.contains("minimized-active")) isMinimized = true;
+        else if (win === dom.helpModal && dom.btnHelp && dom.btnHelp.classList.contains("minimized-active")) isMinimized = true;
+        else if (win === dom.modelBrowserModal && dom.btnSwitchModel && dom.btnSwitchModel.classList.contains("minimized-active")) isMinimized = true;
+        else if (win === dom.modelDownloaderModal && dom.btnDownloadModel && dom.btnDownloadModel.classList.contains("minimized-active")) isMinimized = true;
+        else if (win === dom.notesModal && dom.btnNotes && dom.btnNotes.classList.contains("minimized-active")) isMinimized = true;
+        
+        if (isMinimized) return;
+
         win.style.position = "";
         win.style.margin = "";
         win.style.transform = "";
@@ -4570,6 +4728,9 @@ function initGtkMenuBar() {
     
     const fileSaveAs = $("#menu-file-saveas");
     if (fileSaveAs) fileSaveAs.addEventListener("click", () => { saveNoteAs(); closeGtkMenus(); });
+    
+    const fileRename = $("#menu-file-rename");
+    if (fileRename) fileRename.addEventListener("click", () => { renameActiveNote(); closeGtkMenus(); });
     
     const fileDownload = $("#menu-file-download");
     if (fileDownload) fileDownload.addEventListener("click", () => { downloadActiveNote(); closeGtkMenus(); });

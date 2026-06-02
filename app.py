@@ -807,6 +807,44 @@ def notes_delete():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/notes/rename", methods=["POST"])
+def notes_rename():
+    """
+    Rename a note in the filesystem.
+    """
+    data = request.get_json() or {}
+    old_filename = data.get("old_filename", "").strip()
+    new_filename = data.get("new_filename", "").strip()
+    
+    if not old_filename or not new_filename:
+        return jsonify({"error": "Missing old_filename or new_filename"}), 400
+        
+    # Append default extension if missing
+    if not (new_filename.endswith(".txt") or new_filename.endswith(".md")):
+        new_filename += ".txt"
+        
+    try:
+        old_path = safe_notes_path(old_filename)
+        new_path = safe_notes_path(new_filename)
+        
+        if not os.path.exists(old_path):
+            return jsonify({"error": f"Note '{old_filename}' does not exist"}), 404
+            
+        if os.path.exists(new_path) and old_path != new_path:
+            return jsonify({"error": f"Note '{new_filename}' already exists"}), 400
+            
+        os.rename(old_path, new_path)
+        return jsonify({
+            "success": True,
+            "filename": new_filename,
+            "message": "Note renamed successfully"
+        })
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/notes/get_directory", methods=["GET"])
 def notes_get_directory():
     """
