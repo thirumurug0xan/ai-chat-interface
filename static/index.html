@@ -753,6 +753,24 @@
                             </div>
                         </div>
 
+                        <div class="downloader-param-row">
+                            <div class="setting-item">
+                                <label class="setting-label-bold" for="downloader-hf-token">
+                                    Hugging Face Access Token <span style="font-weight: normal; opacity: 0.7; font-size: 11px;">(Optional, required for gated models)</span>
+                                </label>
+                                <div class="setting-description">Required for restricted repos like google/gemma-3-1b-it.</div>
+                                <div class="hf-token-input-wrapper" style="position: relative; display: flex; align-items: center; width: 100%;">
+                                    <input type="password" id="downloader-hf-token" class="setting-select"
+                                        placeholder="hf_..." style="font-family: var(--font-mono); padding-right: 40px;">
+                                    <button type="button" id="btn-downloader-hf-token-toggle" class="btn-downloader-hf-token-toggle"
+                                        style="position: absolute; right: 10px; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 14px; padding: 4px; display: flex; align-items: center; justify-content: center; outline: none; transition: color var(--transition-fast);"
+                                        title="Toggle Token Visibility">
+                                        👁️
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="downloader-param-grid">
                             <div class="setting-item">
                                 <label class="setting-label-bold" for="downloader-weight-format">Weight Format</label>
@@ -827,30 +845,108 @@
     </div>
 
     <!-- Mousepad Notes Modal -->
-    <div class="modal-overlay" id="notes-modal-overlay">
+    <div class="modal-overlay non-blocking-overlay" id="notes-modal-overlay">
         <div class="modal notes-modal" id="notes-modal">
-            <div class="modal-header">
-                <div class="window-controls">
-                    <button class="control-btn btn-close" id="notes-modal-close" title="Close">✕</button>
+            <!-- XFCE Mousepad Titlebar -->
+            <div class="modal-header gtk-titlebar">
+                <div class="gtk-titlebar-title">
+                    <span class="gtk-title-icon">📝</span>
+                    <span id="notes-window-title">Untitled - Mousepad</span>
+                </div>
+                <div class="window-controls gtk-window-controls">
                     <button class="control-btn btn-minimize" id="notes-modal-minimize" title="Minimize">─</button>
                     <button class="control-btn btn-fullscreen" id="notes-modal-fullscreen" title="Fullscreen">⤢</button>
-                </div>
-                <div class="modal-title">
-                    <span class="modal-title-icon">📝</span>
-                    <span>Mousepad Notes</span>
+                    <button class="control-btn btn-close" id="notes-modal-close" title="Close">✕</button>
                 </div>
             </div>
-            <div class="modal-body notes-modal-body">
-                <!-- Directory Configuration Row (kept hidden to maintain state/browse references) -->
-                <div class="notes-dir-row" style="display: none;">
-                    <span class="notes-dir-label">Storage Folder:</span>
-                    <input type="text" id="notes-dir-input" class="notes-dir-input" placeholder="e.g. ~/my-notes"
-                        title="Notes directory path">
-                    <button class="btn-notes-dir-browse" id="btn-notes-dir-browse"
-                        title="Browse directories on the server">Browse...</button>
-                    <button class="btn-notes-dir-save" id="btn-notes-dir-save" title="Apply folder path">Apply</button>
+
+            <!-- XFCE Mousepad Menu Bar -->
+            <div class="gtk-menubar">
+                <div class="gtk-menu-item">
+                    <span class="gtk-menu-label">File</span>
+                    <div class="gtk-menu-dropdown">
+                        <div class="gtk-dropdown-item" id="menu-file-new"><span class="item-icon">📄</span> New <span class="shortcut">Ctrl+N</span></div>
+                        <div class="gtk-dropdown-item" id="menu-file-open"><span class="item-icon">📁</span> Open Folder <span class="shortcut">Ctrl+O</span></div>
+                        <div class="gtk-dropdown-item" id="menu-file-save"><span class="item-icon">💾</span> Save <span class="shortcut">Ctrl+S</span></div>
+                        <div class="gtk-dropdown-divider"></div>
+                        <div class="gtk-dropdown-item" id="menu-file-download"><span class="item-icon">📥</span> Download</div>
+                        <div class="gtk-dropdown-divider"></div>
+                        <div class="gtk-dropdown-item" id="menu-file-close"><span class="item-icon">✕</span> Close <span class="shortcut">Esc</span></div>
+                    </div>
                 </div>
-                <div class="notes-layout">
+                <div class="gtk-menu-item">
+                    <span class="gtk-menu-label">Edit</span>
+                    <div class="gtk-menu-dropdown">
+                        <div class="gtk-dropdown-item" id="menu-edit-undo"><span class="item-icon">↩️</span> Undo <span class="shortcut">Ctrl+Z</span></div>
+                        <div class="gtk-dropdown-item" id="menu-edit-redo"><span class="item-icon">↪️</span> Redo <span class="shortcut">Ctrl+Y</span></div>
+                        <div class="gtk-dropdown-divider"></div>
+                        <div class="gtk-dropdown-item" id="menu-edit-selectall"><span class="item-icon">📋</span> Select All <span class="shortcut">Ctrl+A</span></div>
+                        <div class="gtk-dropdown-divider"></div>
+                        <div class="gtk-dropdown-item" id="menu-edit-delete" style="color: #ff6b6b;"><span class="item-icon">🗑️</span> Delete Note</div>
+                    </div>
+                </div>
+                <div class="gtk-menu-item">
+                    <span class="gtk-menu-label">Search</span>
+                    <div class="gtk-menu-dropdown">
+                        <div class="gtk-dropdown-item" id="menu-search-find"><span class="item-icon">🔍</span> Find & Replace... <span class="shortcut">Ctrl+F</span></div>
+                    </div>
+                </div>
+                <div class="gtk-menu-item">
+                    <span class="gtk-menu-label">View</span>
+                    <div class="gtk-menu-dropdown">
+                        <div class="gtk-dropdown-item">
+                            <label class="menu-checkbox-label" for="chk-menu-linenumbers">
+                                <input type="checkbox" id="chk-menu-linenumbers" checked> Line Numbers
+                            </label>
+                        </div>
+                        <div class="gtk-dropdown-item">
+                            <label class="menu-checkbox-label" for="chk-menu-wordwrap">
+                                <input type="checkbox" id="chk-menu-wordwrap"> Word Wrap
+                            </label>
+                        </div>
+                        <div class="gtk-dropdown-item">
+                            <label class="menu-checkbox-label" for="chk-menu-highlight">
+                                <input type="checkbox" id="chk-menu-highlight" checked> Syntax Highlight
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="gtk-menu-item">
+                    <span class="gtk-menu-label">Help</span>
+                    <div class="gtk-menu-dropdown">
+                        <div class="gtk-dropdown-item" id="menu-help-about"><span class="item-icon">ℹ️</span> About Mousepad</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- XFCE Mousepad Main Body -->
+            <div class="modal-body notes-modal-body" style="padding: 0; display: flex; flex-direction: column;">
+                <!-- Find & Replace Bar -->
+                <div class="gtk-find-replace-bar" id="find-replace-bar" style="display: none;">
+                    <div class="fr-input-group">
+                        <span class="fr-label">Find:</span>
+                        <input type="text" id="fr-find-input" placeholder="Search text...">
+                    </div>
+                    <div class="fr-input-group">
+                        <span class="fr-label">Replace:</span>
+                        <input type="text" id="fr-replace-input" placeholder="Replace with...">
+                    </div>
+                    <div class="fr-action-buttons">
+                        <button id="btn-fr-next" class="btn-fr-action" title="Find next occurrence">Find Next</button>
+                        <button id="btn-fr-replace" class="btn-fr-action">Replace</button>
+                        <button id="btn-fr-replace-all" class="btn-fr-action">Replace All</button>
+                    </div>
+                    <button id="btn-fr-close" class="btn-fr-close" title="Close Search Bar">✕</button>
+                </div>
+
+                <!-- Hidden inputs/browse buttons keeping directory references active -->
+                <div class="notes-dir-row" style="display: none;">
+                    <input type="text" id="notes-dir-input">
+                    <button id="btn-notes-dir-browse"></button>
+                    <button id="btn-notes-dir-save"></button>
+                </div>
+
+                <div class="notes-layout" style="flex: 1; height: calc(100% - 24px); overflow: hidden;">
                     <!-- Left sidebar: note list -->
                     <div class="notes-sidebar">
                         <button class="btn-new-note" id="btn-new-note" title="Create a new note">
@@ -870,69 +966,40 @@
                     </div>
 
                     <!-- Right content: note editor -->
-                    <div class="notes-editor-pane">
-                        <div class="notes-toolbar">
-                            <div class="notes-toolbar-left">
-                                <button class="btn-tb-action" id="btn-tb-new" title="New Note (＋)">📄 New</button>
-                                <button class="btn-tb-action" id="btn-tb-open" title="Open Folder (📁)">📁 Open
-                                    Folder</button>
-                            </div>
-                            <div class="notes-toolbar-right">
-                                <div class="notes-tb-dropdown-container">
-                                    <button class="btn-tb-action" id="btn-tb-settings" title="Editor Settings (⚙️)">⚙️
-                                        Settings <span class="chevron">▾</span></button>
-                                    <div class="notes-settings-dropdown" id="notes-settings-dropdown">
-                                        <div class="settings-dropdown-item">
-                                            <label for="chk-syntax-highlight" class="checkbox-label">
-                                                <input type="checkbox" id="chk-syntax-highlight" checked>
-                                                Syntax Highlight
-                                            </label>
-                                        </div>
-                                        <div class="settings-dropdown-divider"></div>
-                                        <div class="settings-dropdown-item tab-size-config">
-                                            <span>Tab Size:</span>
-                                            <select id="sel-tab-size" class="dropdown-select">
-                                                <option value="2">2 spaces</option>
-                                                <option value="4" selected>4 spaces</option>
-                                                <option value="8">8 spaces</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="notes-editor-header">
+                    <div class="notes-editor-pane" style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+                        <!-- Filename row -->
+                        <div class="notes-editor-header" style="padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase;">File Name:</span>
                             <input type="text" id="notes-filename" class="notes-filename-input"
-                                placeholder="filename.txt" title="Filename for saving note">
+                                placeholder="filename.txt" title="Filename for saving note" style="flex: 1; border: none; background: transparent; font-family: var(--font-mono); font-size: 13px; color: var(--text-primary); outline: none;">
                         </div>
-                        <div class="notes-editor-body">
-                            <div class="notes-textarea-container">
+
+                        <!-- Editor container with Line Numbers Gutter -->
+                        <div class="notes-editor-body" style="flex: 1; display: flex; overflow: hidden; position: relative;">
+                            <div class="notes-line-numbers" id="notes-line-numbers">1</div>
+                            <div class="notes-textarea-container" style="flex: 1; position: relative; height: 100%;">
                                 <pre id="notes-highlight-pre" class="notes-highlight-pre" aria-hidden="true"></pre>
                                 <textarea id="notes-textarea" class="notes-textarea"
                                     placeholder="Start typing your note here..."></textarea>
                             </div>
                         </div>
-                        <div class="notes-editor-footer">
-                            <div class="notes-status-left">
-                                <span class="notes-status-badge" id="notes-status-badge">Saved</span>
-                            </div>
-                            <div class="notes-status-right">
-                                <span class="notes-word-count" id="notes-word-count">0 words</span>
-                                <span class="notes-char-count" id="notes-char-count">0 chars</span>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer notes-modal-footer">
-                <div class="notes-footer-info">
-                    Saved in server's filesystem under <code>/notes</code>.
+
+            <!-- XFCE Mousepad Bottom Status Bar -->
+            <div class="gtk-statusbar">
+                <div class="gtk-statusbar-section">
+                    <span id="notes-status-badge">Saved</span>
                 </div>
-                <div class="notes-actions">
-                    <button class="btn-notes-download" id="btn-notes-download"
-                        title="Download note locally to your machine">📥 Download</button>
-                    <button class="btn-notes-save" id="btn-notes-save" title="Save changes to server filesystem">💾 Save
-                        Note</button>
+                <div class="gtk-statusbar-section">
+                    <span id="notes-file-type">Plain Text</span>
+                    <span class="gtk-statusbar-divider"></span>
+                    <span id="notes-encoding">UTF-8</span>
+                    <span class="gtk-statusbar-divider"></span>
+                    <span id="notes-ln-col">Ln 1, Col 1</span>
+                    <span class="gtk-statusbar-divider"></span>
+                    <span id="notes-word-count">0 words</span>
                 </div>
             </div>
         </div>
@@ -940,7 +1007,6 @@
 
     <!-- Toast container -->
     <div class="toast-container" id="toast-container"></div>
-    </div>
 
     <!-- Command Palette Modal -->
     <div class="palette-overlay" id="palette-overlay">

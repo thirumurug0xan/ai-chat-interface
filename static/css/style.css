@@ -4605,5 +4605,276 @@ body {
 .hl-property { color: var(--hl-property); }
 .hl-header { color: var(--hl-header); font-weight: bold; }
 
+/* Hugging Face Token Toggle Button Styles */
+.btn-downloader-hf-token-toggle:hover {
+    color: var(--text-primary) !important;
+    transform: scale(1.1);
+}
+.btn-downloader-hf-token-toggle:active {
+    transform: scale(0.9);
+}
 
+/* ── XFCE Mousepad GTK Styles ────────────────────────────────────────── */
+
+/* Non-blocking overlay for Mousepad */
+.modal-overlay.non-blocking-overlay {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    pointer-events: none !important;
+}
+
+.modal-overlay.non-blocking-overlay .modal {
+    pointer-events: auto !important;
+    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+
+/* GTK Windows Styles (XFCE Mousepad Look) */
+.gtk-titlebar {
+    background: var(--bg-glass-strong) !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    padding: 6px 12px !important;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+    height: 34px !important;
+}
+
+.gtk-titlebar-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.gtk-title-icon {
+    font-size: 14px;
+}
+
+/* Menu Bar Styles */
+.gtk-menubar {
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    padding: 2px 8px;
+    user-select: none;
+    z-index: 10;
+    position: relative;
+}
+
+.gtk-menu-item {
+    position: relative;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.gtk-menu-item:hover, .gtk-menu-item.active {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.gtk-menu-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.gtk-menu-item:hover .gtk-menu-label, .gtk-menu-item.active .gtk-menu-label {
+    color: var(--text-primary);
+}
+
+/* Dropdown Menu Styles */
+.gtk-menu-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: rgba(20, 20, 35, 0.98);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-medium);
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    min-width: 200px;
+    padding: 4px 0;
+    margin-top: 2px;
+    z-index: 1000;
+}
+
+.gtk-menu-item.active .gtk-menu-dropdown {
+    display: block;
+}
+
+.gtk-dropdown-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.gtk-dropdown-item:hover {
+    background: var(--accent-1);
+    color: #fff;
+}
+
+.gtk-dropdown-item .item-icon {
+    margin-right: 8px;
+    width: 14px;
+    text-align: center;
+    font-size: 12px;
+}
+
+.gtk-dropdown-item .shortcut {
+    margin-left: auto;
+    font-size: 10.5px;
+    opacity: 0.6;
+    font-family: var(--font-sans);
+}
+
+.gtk-dropdown-divider {
+    height: 1px;
+    background: var(--border-subtle);
+    margin: 4px 0;
+}
+
+/* Checkbox alignment in dropdowns */
+.menu-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.menu-checkbox-label input {
+    cursor: pointer;
+    margin: 0;
+}
+
+/* Find & Replace Bar */
+.gtk-find-replace-bar {
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 5;
+    flex-wrap: wrap;
+}
+
+.fr-input-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.fr-label {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.fr-input-group input {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-medium);
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11.5px;
+    width: 140px;
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+.fr-input-group input:focus {
+    border-color: var(--accent-1);
+}
+
+.fr-action-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-fr-action {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-fr-action:hover {
+    border-color: var(--border-medium);
+    color: var(--text-primary);
+    background: var(--bg-glass-strong);
+}
+
+.btn-fr-close {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px;
+    margin-left: auto;
+    transition: color var(--transition-fast);
+}
+
+.btn-fr-close:hover {
+    color: var(--text-primary);
+}
+
+/* Line Numbers Gutter */
+.notes-line-numbers {
+    width: 42px;
+    background: rgba(0, 0, 0, 0.15);
+    border-right: 1px solid var(--border-subtle);
+    padding: 14px 8px 14px 0;
+    box-sizing: border-box;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-tertiary);
+    user-select: none;
+    overflow-y: hidden;
+    flex-shrink: 0;
+}
+
+/* GTK Status Bar */
+.gtk-statusbar {
+    background: var(--bg-glass-strong);
+    border-top: 1px solid var(--border-subtle);
+    padding: 4px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    height: 24px;
+    box-sizing: border-box;
+}
+
+.gtk-statusbar-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gtk-statusbar-divider {
+    width: 1px;
+    height: 12px;
+    background: var(--border-subtle);
+}
 

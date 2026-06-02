@@ -30,7 +30,7 @@ engine = ModelEngine()
 # Global dictionary to track Hugging Face model export and download processes
 active_downloads = {}
 
-def run_export_process(task_id, cmd, output_dir):
+def run_export_process(task_id, cmd, output_dir, hf_token=None):
     task = active_downloads.get(task_id)
     if not task:
         return
@@ -41,6 +41,12 @@ def run_export_process(task_id, cmd, output_dir):
         
         task["logs"].append(f"Starting export command: {' '.join(cmd)}\n\n")
         
+        # Prepare environment
+        process_env = os.environ.copy()
+        if hf_token:
+            process_env["HF_TOKEN"] = hf_token
+            task["logs"].append("[SYSTEM] Authenticating with Hugging Face Token...\n")
+        
         # Start subprocess, redirect stderr to stdout so we capture everything
         process = subprocess.Popen(
             cmd,
@@ -48,7 +54,8 @@ def run_export_process(task_id, cmd, output_dir):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            universal_newlines=True
+            universal_newlines=True,
+            env=process_env
         )
         task["process"] = process
         
@@ -480,6 +487,7 @@ def models_download():
     weight_format = data.get("weight_format", "int8").strip()
     task = data.get("task", "text-generation-with-past").strip()
     output_dir_name = data.get("output_dir", "").strip()
+    hf_token = data.get("hf_token", "").strip()
     
     if not model_id:
         return jsonify({"error": "Missing 'model_id' in request body"}), 400
@@ -534,7 +542,7 @@ def models_download():
     # Start thread
     thread = threading.Thread(
         target=run_export_process,
-        args=(task_id, cmd, output_path),
+        args=(task_id, cmd, output_path, hf_token),
         daemon=True
     )
     thread.start()

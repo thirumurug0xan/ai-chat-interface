@@ -172,6 +172,8 @@ const dom = {
     downloaderWeightFormat: $("#downloader-weight-format"),
     downloaderTask: $("#downloader-task"),
     downloaderOutputDir: $("#downloader-output-dir"),
+    downloaderHfToken: $("#downloader-hf-token"),
+    btnDownloaderHfTokenToggle: $("#btn-downloader-hf-token-toggle"),
     downloaderJobDot: $("#downloader-job-dot"),
     downloaderJobStatusText: $("#downloader-job-status-text"),
     downloaderConsoleOutput: $("#downloader-console-output"),
@@ -205,8 +207,8 @@ const dom = {
     notesStatusBadge: $("#notes-status-badge"),
     notesWordCount: $("#notes-word-count"),
     notesCharCount: $("#notes-char-count"),
-    btnNotesDownload: $("#btn-notes-download"),
-    btnNotesSave: $("#btn-notes-save"),
+    btnNotesDownload: $("#btn-notes-download") || $("#menu-file-download"),
+    btnNotesSave: $("#btn-notes-save") || $("#menu-file-save"),
     notesDirInput: $("#notes-dir-input"),
     btnNotesDirSave: $("#btn-notes-dir-save"),
     btnNotesDirBrowse: $("#btn-notes-dir-browse"),
@@ -219,6 +221,20 @@ const dom = {
     selTabSize: $("#sel-tab-size"),
     notesHighlightPre: $("#notes-highlight-pre"),
     notesCurrentDirDisplay: $("#notes-current-dir-display"),
+    notesLineNumbers: $("#notes-line-numbers"),
+    notesWindowTitle: $("#notes-window-title"),
+    notesFileType: $("#notes-file-type"),
+    notesLnCol: $("#notes-ln-col"),
+    findReplaceBar: $("#find-replace-bar"),
+    frFindInput: $("#fr-find-input"),
+    frReplaceInput: $("#fr-replace-input"),
+    btnFrNext: $("#btn-fr-next"),
+    btnFrReplace: $("#btn-fr-replace"),
+    btnFrReplaceAll: $("#btn-fr-replace-all"),
+    btnFrClose: $("#btn-fr-close"),
+    chkMenuLinenumbers: $("#chk-menu-linenumbers"),
+    chkMenuWordwrap: $("#chk-menu-wordwrap"),
+    chkMenuHighlight: $("#chk-menu-highlight"),
 };
 
 // ── Window Stacking Management ───────────────────────────────────────────────
@@ -354,8 +370,20 @@ function initEventListeners() {
             }
         }
 
+        // Ctrl+F — find & replace (if notes modal is visible)
+        if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+            if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+                e.preventDefault();
+                toggleFindReplaceBar(dom.findReplaceBar ? dom.findReplaceBar.style.display === "none" : true);
+            }
+        }
+
         // Esc — close popups, modals and command palette
         if (e.key === "Escape") {
+            if (dom.findReplaceBar && dom.findReplaceBar.style.display === "flex") {
+                toggleFindReplaceBar(false);
+                return;
+            }
             if (paletteState.isOpen) {
                 closePalette();
                 return;
@@ -574,6 +602,19 @@ function initEventListeners() {
     if (dom.downloaderOutputDir) {
         dom.downloaderOutputDir.addEventListener("input", validateDownloaderInputs);
     }
+    if (dom.btnDownloaderHfTokenToggle && dom.downloaderHfToken) {
+        dom.btnDownloaderHfTokenToggle.addEventListener("click", () => {
+            if (dom.downloaderHfToken.type === "password") {
+                dom.downloaderHfToken.type = "text";
+                dom.btnDownloaderHfTokenToggle.textContent = "🙈";
+                dom.btnDownloaderHfTokenToggle.title = "Hide Token";
+            } else {
+                dom.downloaderHfToken.type = "password";
+                dom.btnDownloaderHfTokenToggle.textContent = "👁️";
+                dom.btnDownloaderHfTokenToggle.title = "Show Token";
+            }
+        });
+    }
     // Start/Load Export Action
     if (dom.btnDownloaderStart) {
         dom.btnDownloaderStart.addEventListener("click", handleStartExport);
@@ -736,7 +777,15 @@ function initEventListeners() {
                 dom.notesHighlightPre.scrollTop = dom.notesTextarea.scrollTop;
                 dom.notesHighlightPre.scrollLeft = dom.notesTextarea.scrollLeft;
             }
+            if (dom.notesLineNumbers) {
+                dom.notesLineNumbers.scrollTop = dom.notesTextarea.scrollTop;
+            }
         });
+        // Caret/selection position listener
+        dom.notesTextarea.addEventListener("keyup", updateCursorPosition);
+        dom.notesTextarea.addEventListener("click", updateCursorPosition);
+        dom.notesTextarea.addEventListener("focus", updateCursorPosition);
+        dom.notesTextarea.addEventListener("select", updateCursorPosition);
         // Intercept Tab key
         dom.notesTextarea.addEventListener("keydown", (e) => {
             if (e.key === "Tab") {
@@ -796,6 +845,23 @@ function initEventListeners() {
             openModelBrowserModal();
         });
     }
+
+    // Find & Replace Buttons
+    if (dom.btnFrNext) dom.btnFrNext.addEventListener("click", handleFindNext);
+    if (dom.btnFrReplace) dom.btnFrReplace.addEventListener("click", handleReplace);
+    if (dom.btnFrReplaceAll) dom.btnFrReplaceAll.addEventListener("click", handleReplaceAll);
+    if (dom.btnFrClose) dom.btnFrClose.addEventListener("click", () => toggleFindReplaceBar(false));
+    if (dom.frFindInput) {
+        dom.frFindInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                handleFindNext();
+            }
+        });
+    }
+
+    // Initialize GTK Menu Bar
+    initGtkMenuBar();
 
     // Bring modal overlay to front on mousedown/click
     $$(".modal-overlay").forEach((overlay) => {
@@ -1427,6 +1493,10 @@ function loadState() {
                 dom.settingMaxNewTokens.value = state.maxTokens;
                 dom.settingMaxNewTokensVal.textContent = state.maxTokens;
             }
+        }
+        
+        if (dom.downloaderHfToken) {
+            dom.downloaderHfToken.value = localStorage.getItem("hf_token") || "";
         }
     } catch (err) {
         console.warn("Failed to load state:", err);
@@ -2799,6 +2869,10 @@ async function handleStartExport() {
     const weightFormat = dom.downloaderWeightFormat.value;
     const task = dom.downloaderTask.value;
     const outputDir = dom.downloaderOutputDir.value.trim();
+    const hfToken = dom.downloaderHfToken ? dom.downloaderHfToken.value.trim() : "";
+    
+    // Persist HF token
+    localStorage.setItem("hf_token", hfToken);
     
     if (!modelId || !outputDir) {
         showToast("Please fill in all model details.", "error");
@@ -2816,7 +2890,8 @@ async function handleStartExport() {
                 model_id: modelId,
                 weight_format: weightFormat,
                 task: task,
-                output_dir: outputDir
+                output_dir: outputDir,
+                hf_token: hfToken
             })
         });
         
@@ -3620,13 +3695,22 @@ function checkUnsavedChanges() {
     const badge = dom.notesStatusBadge;
     if (badge) {
         if (notesState.isUnsaved) {
-            badge.textContent = "Unsaved Changes";
+            badge.textContent = "Modified";
             badge.className = "notes-status-badge unsaved";
         } else {
             badge.textContent = "Saved";
             badge.className = "notes-status-badge";
         }
     }
+
+    const filename = filenameInput || "Untitled";
+    if (dom.notesWindowTitle) {
+        dom.notesWindowTitle.textContent = `${notesState.isUnsaved ? '*' : ''}${filename} - Mousepad`;
+    }
+
+    updateLanguageBadge(filename);
+    updateLineNumbers();
+    updateCursorPosition();
 }
 
 async function saveNotesDirectory() {
@@ -4021,4 +4105,316 @@ function makeWindowResizable(win) {
         
         win.style.transition = ""; // Restore transitions
     }
+}
+
+// ── XFCE Mousepad Helper Functions ──────────────────────────────────────────
+
+function updateLineNumbers() {
+    if (!dom.notesLineNumbers || !dom.notesTextarea) return;
+    
+    // Check if line numbers view is enabled
+    const showLines = dom.chkMenuLinenumbers ? dom.chkMenuLinenumbers.checked : true;
+    if (!showLines) {
+        dom.notesLineNumbers.style.display = "none";
+        return;
+    }
+    dom.notesLineNumbers.style.display = "block";
+    
+    const text = dom.notesTextarea.value;
+    const lines = text.split('\n');
+    const lineCount = lines.length;
+    
+    let numbersHtml = "";
+    for (let i = 1; i <= lineCount; i++) {
+        numbersHtml += `<div>${i}</div>`;
+    }
+    
+    dom.notesLineNumbers.innerHTML = numbersHtml;
+    // Align scroll
+    dom.notesLineNumbers.scrollTop = dom.notesTextarea.scrollTop;
+}
+
+function updateCursorPosition() {
+    if (!dom.notesTextarea) return;
+    
+    const text = dom.notesTextarea.value;
+    const selStart = dom.notesTextarea.selectionStart;
+    
+    // Split text up to selection start to count lines
+    const textUpToCursor = text.substring(0, selStart);
+    const lines = textUpToCursor.split('\n');
+    
+    const lineNum = lines.length;
+    const colNum = lines[lines.length - 1].length + 1;
+    
+    if (dom.notesLnCol) {
+        dom.notesLnCol.textContent = `Ln ${lineNum}, Col ${colNum}`;
+    }
+}
+
+function updateLanguageBadge(filename) {
+    if (!dom.notesFileType) return;
+    
+    if (!filename || !filename.includes('.')) {
+        dom.notesFileType.textContent = "Plain Text";
+        return;
+    }
+    
+    const ext = filename.split('.').pop().toLowerCase();
+    let lang = "Plain Text";
+    switch (ext) {
+        case "js": lang = "JavaScript"; break;
+        case "py": lang = "Python"; break;
+        case "html": lang = "HTML"; break;
+        case "css": lang = "CSS"; break;
+        case "json": lang = "JSON"; break;
+        case "md": lang = "Markdown"; break;
+        case "sh": lang = "Shell Script"; break;
+        case "cpp": case "cc": lang = "C++"; break;
+        case "c": lang = "C"; break;
+        case "java": lang = "Java"; break;
+        case "ts": lang = "TypeScript"; break;
+    }
+    dom.notesFileType.textContent = lang;
+}
+
+function deleteCurrentNote() {
+    const filename = dom.notesFilename ? dom.notesFilename.value.trim() : "";
+    if (!filename) {
+        showToast("No note is currently open to delete", "warning");
+        return;
+    }
+    deleteNote(filename);
+}
+
+// Find & Replace Functions
+let lastFindIndex = -1;
+
+function toggleFindReplaceBar(show) {
+    if (!dom.findReplaceBar) return;
+    if (show) {
+        dom.findReplaceBar.style.display = "flex";
+        if (dom.frFindInput) {
+            dom.frFindInput.focus();
+            dom.frFindInput.select();
+        }
+    } else {
+        dom.findReplaceBar.style.display = "none";
+        lastFindIndex = -1;
+    }
+}
+
+function handleFindNext() {
+    if (!dom.notesTextarea || !dom.frFindInput) return;
+    const query = dom.frFindInput.value;
+    if (!query) {
+        showToast("Enter text to find", "warning");
+        return;
+    }
+
+    const text = dom.notesTextarea.value;
+    const startIndex = lastFindIndex === -1 ? 0 : lastFindIndex + 1;
+    
+    // Find next case-insensitive match
+    const index = text.toLowerCase().indexOf(query.toLowerCase(), startIndex);
+    
+    if (index !== -1) {
+        dom.notesTextarea.focus();
+        dom.notesTextarea.setSelectionRange(index, index + query.length);
+        
+        // Scroll selection into view
+        const numLines = text.substring(0, index).split('\n').length;
+        const lineHeight = 13 * 1.6;
+        dom.notesTextarea.scrollTop = (numLines - 4) * lineHeight;
+        
+        lastFindIndex = index;
+    } else {
+        if (startIndex > 0) {
+            // Wrap around
+            showToast("Search wrapped around", "info");
+            lastFindIndex = -1;
+            handleFindNext();
+        } else {
+            showToast("Search string not found", "info");
+        }
+    }
+}
+
+function handleReplace() {
+    if (!dom.notesTextarea || !dom.frFindInput || !dom.frReplaceInput) return;
+    const findText = dom.frFindInput.value;
+    const replaceText = dom.frReplaceInput.value;
+    
+    if (!findText) return;
+
+    const textarea = dom.notesTextarea;
+    const text = textarea.value;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = text.substring(start, end);
+    
+    if (selectedText.toLowerCase() === findText.toLowerCase()) {
+        textarea.value = text.substring(0, start) + replaceText + text.substring(end);
+        textarea.setSelectionRange(start, start + replaceText.length);
+        
+        notesState.currentContent = textarea.value;
+        checkUnsavedChanges();
+        syncHighlight();
+        
+        lastFindIndex = start + replaceText.length - 1;
+        handleFindNext();
+    } else {
+        handleFindNext();
+    }
+}
+
+function handleReplaceAll() {
+    if (!dom.notesTextarea || !dom.frFindInput || !dom.frReplaceInput) return;
+    const findText = dom.frFindInput.value;
+    const replaceText = dom.frReplaceInput.value;
+    
+    if (!findText) return;
+
+    const textarea = dom.notesTextarea;
+    const text = textarea.value;
+    
+    const escapedFind = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedFind, 'gi');
+    
+    const matches = text.match(regex);
+    if (matches && matches.length > 0) {
+        textarea.value = text.replace(regex, replaceText);
+        notesState.currentContent = textarea.value;
+        checkUnsavedChanges();
+        syncHighlight();
+        showToast(`Replaced ${matches.length} occurrence(s)`, "success");
+    } else {
+        showToast("Search string not found", "info");
+    }
+}
+
+function initGtkMenuBar() {
+    const menuItems = $$(".gtk-menu-item");
+    
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest(".gtk-menubar")) {
+            menuItems.forEach(item => item.classList.remove("active"));
+        }
+    });
+
+    menuItems.forEach((menuItem) => {
+        const label = menuItem.querySelector(".gtk-menu-label");
+        if (!label) return;
+        
+        label.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const wasActive = menuItem.classList.contains("active");
+            menuItems.forEach(item => item.classList.remove("active"));
+            if (!wasActive) {
+                menuItem.classList.add("active");
+            }
+        });
+
+        menuItem.addEventListener("mouseenter", () => {
+            const anyActive = Array.from(menuItems).some(item => item.classList.contains("active"));
+            if (anyActive) {
+                menuItems.forEach(item => item.classList.remove("active"));
+                menuItem.classList.add("active");
+            }
+        });
+    });
+
+    // File Menu Actions
+    const fileNew = $("#menu-file-new");
+    if (fileNew) fileNew.addEventListener("click", () => { createNewNote(); closeGtkMenus(); });
+    
+    const fileOpen = $("#menu-file-open");
+    if (fileOpen) fileOpen.addEventListener("click", () => {
+        if (dom.btnTbOpen) dom.btnTbOpen.click();
+        closeGtkMenus();
+    });
+    
+    const fileSave = $("#menu-file-save");
+    if (fileSave) fileSave.addEventListener("click", () => { saveActiveNote(); closeGtkMenus(); });
+    
+    const fileDownload = $("#menu-file-download");
+    if (fileDownload) fileDownload.addEventListener("click", () => { downloadActiveNote(); closeGtkMenus(); });
+    
+    const fileClose = $("#menu-file-close");
+    if (fileClose) fileClose.addEventListener("click", () => { closeNotesModal(); closeGtkMenus(); });
+
+    // Edit Menu Actions
+    const editUndo = $("#menu-edit-undo");
+    if (editUndo) editUndo.addEventListener("click", () => { document.execCommand("undo"); closeGtkMenus(); });
+    
+    const editRedo = $("#menu-edit-redo");
+    if (editRedo) editRedo.addEventListener("click", () => { document.execCommand("redo"); closeGtkMenus(); });
+    
+    const editSelectAll = $("#menu-edit-selectall");
+    if (editSelectAll) editSelectAll.addEventListener("click", () => {
+        if (dom.notesTextarea) {
+            dom.notesTextarea.focus();
+            dom.notesTextarea.select();
+        }
+        closeGtkMenus();
+    });
+    
+    const editDelete = $("#menu-edit-delete");
+    if (editDelete) editDelete.addEventListener("click", () => { deleteCurrentNote(); closeGtkMenus(); });
+
+    // Search Menu Actions
+    const searchFind = $("#menu-search-find");
+    if (searchFind) searchFind.addEventListener("click", () => { toggleFindReplaceBar(true); closeGtkMenus(); });
+
+    // View Menu Toggles
+    const chkMenuLinenumbers = $("#chk-menu-linenumbers");
+    if (chkMenuLinenumbers) {
+        chkMenuLinenumbers.addEventListener("change", (e) => {
+            if (dom.notesLineNumbers) {
+                dom.notesLineNumbers.style.display = e.target.checked ? "block" : "none";
+            }
+        });
+    }
+
+    const chkMenuWordwrap = $("#chk-menu-wordwrap");
+    if (chkMenuWordwrap) {
+        chkMenuWordwrap.addEventListener("change", (e) => {
+            const wrap = e.target.checked;
+            if (dom.notesTextarea && dom.notesHighlightPre) {
+                if (wrap) {
+                    dom.notesTextarea.style.whiteSpace = "pre-wrap";
+                    dom.notesTextarea.style.wordWrap = "break-word";
+                    dom.notesHighlightPre.style.whiteSpace = "pre-wrap";
+                    dom.notesHighlightPre.style.wordWrap = "break-word";
+                } else {
+                    dom.notesTextarea.style.whiteSpace = "pre";
+                    dom.notesTextarea.style.wordWrap = "normal";
+                    dom.notesHighlightPre.style.whiteSpace = "pre";
+                    dom.notesHighlightPre.style.wordWrap = "normal";
+                }
+            }
+        });
+    }
+
+    const chkMenuHighlight = $("#chk-menu-highlight");
+    if (chkMenuHighlight) {
+        chkMenuHighlight.addEventListener("change", (e) => {
+            notesState.syntaxHighlightOn = e.target.checked;
+            if (dom.chkSyntaxHighlight) dom.chkSyntaxHighlight.checked = notesState.syntaxHighlightOn;
+            updateHighlightView();
+            syncHighlight();
+        });
+    }
+
+    // Help Menu Actions
+    const helpAbout = $("#menu-help-about");
+    if (helpAbout) helpAbout.addEventListener("click", () => {
+        alert("About Mousepad\n\nA simple, lightweight text editor clone inspired by XFCE Mousepad. Built for the AI Chat Interface.");
+        closeGtkMenus();
+    });
+}
+
+function closeGtkMenus() {
+    $$(".gtk-menu-item").forEach(item => item.classList.remove("active"));
 }
