@@ -968,11 +968,9 @@
 
                     <!-- Right content: note editor -->
                     <div class="notes-editor-pane" style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
-                        <!-- Filename row -->
-                        <div class="notes-editor-header" style="padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase;">File Name:</span>
-                            <input type="text" id="notes-filename" class="notes-filename-input"
-                                placeholder="filename.txt" title="Filename for saving note" style="flex: 1; border: none; background: transparent; font-family: var(--font-mono); font-size: 13px; color: var(--text-primary); outline: none;">
+                        <!-- Tab bar row -->
+                        <div class="notes-tabs-bar" id="notes-tabs-bar">
+                            <button class="btn-notes-tab-add" id="btn-notes-tab-add" title="New Note">＋</button>
                         </div>
 
                         <!-- Editor container with Line Numbers Gutter -->
