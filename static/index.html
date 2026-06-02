@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="AI Chat Interface — A premium web UI for local OpenVINO AI models">
     <title>AI Chat Interface</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 </head>
+
 <body>
     <div class="app" id="app">
         <!-- Mobile sidebar overlay -->
@@ -33,7 +36,8 @@
                 <div class="sidebar-section sidebar-section-conversations">
                     <div class="sidebar-section-title">Conversations</div>
                     <div class="sidebar-search-wrapper">
-                        <input type="text" id="sidebar-search" placeholder="Search chats..." title="Search chat titles and messages" autocomplete="off">
+                        <input type="text" id="sidebar-search" placeholder="Search chats..."
+                            title="Search chat titles and messages" autocomplete="off">
                         <span class="sidebar-search-clear" id="sidebar-search-clear" style="display: none;">✕</span>
                     </div>
                     <ul class="conversation-list" id="conversation-list">
@@ -76,10 +80,12 @@
                                 <span class="value" id="model-status">Connecting...</span>
                             </div>
                             <div class="model-info-action">
-                                <button class="btn-switch-model" id="btn-switch-model" title="Select a model from the server filesystem">
+                                <button class="btn-switch-model" id="btn-switch-model"
+                                    title="Select a model from the server filesystem">
                                     📁 Switch Model...
                                 </button>
-                                <button class="btn-download-model" id="btn-download-model" title="Search and download new model from Hugging Face">
+                                <button class="btn-download-model" id="btn-download-model"
+                                    title="Search and download new model from Hugging Face">
                                     📥 Download Model...
                                 </button>
                             </div>
@@ -155,13 +161,15 @@
                             <div class="util-graph-item">
                                 <div class="util-graph-label">
                                     <span class="util-graph-name">
-                                        <span class="memory-dot" style="background: #ffa502; box-shadow: 0 0 6px rgba(255,165,2,0.5);"></span>
+                                        <span class="memory-dot"
+                                            style="background: #ffa502; box-shadow: 0 0 6px rgba(255,165,2,0.5);"></span>
                                         CPU
                                     </span>
                                     <span class="util-graph-value" id="cpu-util-value">0%</span>
                                 </div>
                                 <div class="util-graph-canvas-wrap">
-                                    <canvas class="util-graph-canvas" id="cpu-graph-canvas" width="240" height="50"></canvas>
+                                    <canvas class="util-graph-canvas" id="cpu-graph-canvas" width="240"
+                                        height="50"></canvas>
                                 </div>
                             </div>
 
@@ -175,7 +183,8 @@
                                     <span class="util-graph-value" id="gpu-util-value">0%</span>
                                 </div>
                                 <div class="util-graph-canvas-wrap">
-                                    <canvas class="util-graph-canvas" id="gpu-graph-canvas" width="240" height="50"></canvas>
+                                    <canvas class="util-graph-canvas" id="gpu-graph-canvas" width="240"
+                                        height="50"></canvas>
                                 </div>
                             </div>
 
@@ -189,7 +198,8 @@
                                     <span class="util-graph-value" id="ram-util-value">0%</span>
                                 </div>
                                 <div class="util-graph-canvas-wrap">
-                                    <canvas class="util-graph-canvas" id="ram-graph-canvas" width="240" height="50"></canvas>
+                                    <canvas class="util-graph-canvas" id="ram-graph-canvas" width="240"
+                                        height="50"></canvas>
                                 </div>
                             </div>
                         </div>
@@ -236,7 +246,8 @@
                     <div class="welcome-screen" id="welcome-screen">
                         <div class="welcome-icon">🧠</div>
                         <h2>Welcome to AI Chat</h2>
-                        <p>Your local AI assistant powered by OpenVINO. Start a conversation below or pick a suggestion.</p>
+                        <p>Your local AI assistant powered by OpenVINO. Start a conversation below or pick a suggestion.
+                        </p>
                         <div class="welcome-suggestions" id="welcome-suggestions">
                             <div class="suggestion-card" data-prompt="Explain quantum computing in simple terms">
                                 <div class="suggestion-icon">⚛️</div>
@@ -250,7 +261,8 @@
                                 <div class="suggestion-icon">⚡</div>
                                 <div class="suggestion-text">What are the benefits of using OpenVINO?</div>
                             </div>
-                            <div class="suggestion-card" data-prompt="Help me write a cover letter for a software engineer position">
+                            <div class="suggestion-card"
+                                data-prompt="Help me write a cover letter for a software engineer position">
                                 <div class="suggestion-icon">📝</div>
                                 <div class="suggestion-text">Help me write a cover letter</div>
                             </div>
@@ -266,12 +278,7 @@
             <div class="input-area">
                 <div class="input-container">
                     <div class="input-wrapper">
-                        <textarea
-                            id="chat-input"
-                            placeholder="Type a message..."
-                            rows="1"
-                            autofocus
-                        ></textarea>
+                        <textarea id="chat-input" placeholder="Type a message..." rows="1" autofocus></textarea>
                         <button class="btn-send" id="btn-send" title="Send message (Enter)">
                             ➤
                         </button>
@@ -361,7 +368,8 @@
                 <div class="window-controls">
                     <button class="control-btn btn-close" id="settings-modal-close" title="Close">✕</button>
                     <button class="control-btn btn-minimize" id="settings-modal-minimize" title="Minimize">─</button>
-                    <button class="control-btn btn-fullscreen" id="settings-modal-fullscreen" title="Fullscreen">⤢</button>
+                    <button class="control-btn btn-fullscreen" id="settings-modal-fullscreen"
+                        title="Fullscreen">⤢</button>
                 </div>
                 <div class="modal-title">
                     <span class="modal-title-icon">⚙️</span>
@@ -383,20 +391,26 @@
 
                     <div class="setting-item">
                         <div class="setting-label-row">
-                            <label class="setting-label-bold" for="setting-max-new-tokens">Max Response Length (Max New Tokens)</label>
+                            <label class="setting-label-bold" for="setting-max-new-tokens">Max Response Length (Max New
+                                Tokens)</label>
                             <span class="setting-value-badge" id="setting-max-new-tokens-val">2048</span>
                         </div>
-                        <div class="setting-description">Maximum number of tokens the model generates per response.</div>
-                        <input type="range" id="setting-max-new-tokens" class="setting-slider-modern" min="64" max="4096" step="64" value="2048">
+                        <div class="setting-description">Maximum number of tokens the model generates per response.
+                        </div>
+                        <input type="range" id="setting-max-new-tokens" class="setting-slider-modern" min="64"
+                            max="4096" step="64" value="2048">
                     </div>
 
                     <div class="setting-item">
                         <div class="setting-label-row">
-                            <label class="setting-label-bold" for="setting-max-input-tokens">Context Window (Max Input Tokens)</label>
+                            <label class="setting-label-bold" for="setting-max-input-tokens">Context Window (Max Input
+                                Tokens)</label>
                             <span class="setting-value-badge" id="setting-max-input-tokens-val">1024</span>
                         </div>
-                        <div class="setting-description">Limits history size to prevent GPU out-of-memory errors. Old messages are trimmed when this limit is reached.</div>
-                        <input type="range" id="setting-max-input-tokens" class="setting-slider-modern" min="256" max="4096" step="128" value="1024">
+                        <div class="setting-description">Limits history size to prevent GPU out-of-memory errors. Old
+                            messages are trimmed when this limit is reached.</div>
+                        <input type="range" id="setting-max-input-tokens" class="setting-slider-modern" min="256"
+                            max="4096" step="128" value="1024">
                     </div>
                 </div>
             </div>
@@ -429,19 +443,24 @@
                     <div class="help-items">
                         <div class="help-item">
                             <div class="help-item-title">Streaming Responses</div>
-                            <div class="help-item-desc">Responses appear token-by-token in real time via Server-Sent Events. You can stop generation anytime by clicking the stop button.</div>
+                            <div class="help-item-desc">Responses appear token-by-token in real time via Server-Sent
+                                Events. You can stop generation anytime by clicking the stop button.</div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">Conversation History</div>
-                            <div class="help-item-desc">All conversations are saved locally in your browser's storage. Switch between chats using the sidebar, or create new ones with <kbd>Ctrl+N</kbd>.</div>
+                            <div class="help-item-desc">All conversations are saved locally in your browser's storage.
+                                Switch between chats using the sidebar, or create new ones with <kbd>Ctrl+N</kbd>.</div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">Retry Responses</div>
-                            <div class="help-item-desc">Hover over any AI response to reveal action buttons. Click <strong>🔄 Retry</strong> to regenerate from that point in the conversation.</div>
+                            <div class="help-item-desc">Hover over any AI response to reveal action buttons. Click
+                                <strong>🔄 Retry</strong> to regenerate from that point in the conversation.
+                            </div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">Copy Messages</div>
-                            <div class="help-item-desc">Hover over any message and click <strong>📋 Copy</strong> to copy the full text. Code blocks have their own copy buttons.</div>
+                            <div class="help-item-desc">Hover over any message and click <strong>📋 Copy</strong> to
+                                copy the full text. Code blocks have their own copy buttons.</div>
                         </div>
                     </div>
                 </div>
@@ -454,14 +473,18 @@
                     <div class="help-items">
                         <div class="help-item">
                             <div class="help-item-title">What is the Context Window?</div>
-                            <div class="help-item-desc">The context window is the maximum number of tokens (words/subwords) the model can process at once. It includes all messages in the conversation. Click the context indicator below the input to see detailed usage.</div>
+                            <div class="help-item-desc">The context window is the maximum number of tokens
+                                (words/subwords) the model can process at once. It includes all messages in the
+                                conversation. Click the context indicator below the input to see detailed usage.</div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">Context Health Indicators</div>
                             <div class="help-item-desc">
                                 <span class="help-badge healthy">● Healthy</span> Under 75% — plenty of room<br>
-                                <span class="help-badge warning">● Warning</span> 75–90% — consider starting a new chat<br>
-                                <span class="help-badge critical">● Critical</span> Over 90% — responses may be truncated
+                                <span class="help-badge warning">● Warning</span> 75–90% — consider starting a new
+                                chat<br>
+                                <span class="help-badge critical">● Critical</span> Over 90% — responses may be
+                                truncated
                             </div>
                         </div>
                     </div>
@@ -475,15 +498,20 @@
                     <div class="help-items">
                         <div class="help-item">
                             <div class="help-item-title">Generation Speed</div>
-                            <div class="help-item-desc">After each response, generation stats appear showing <strong>tokens/second</strong>, total tokens, and elapsed time. These appear below the AI's response.</div>
+                            <div class="help-item-desc">After each response, generation stats appear showing
+                                <strong>tokens/second</strong>, total tokens, and elapsed time. These appear below the
+                                AI's response.
+                            </div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">Memory Monitor</div>
-                            <div class="help-item-desc">The sidebar shows live GPU VRAM and system RAM usage, updated every 5 seconds. Click the refresh icon to update instantly.</div>
+                            <div class="help-item-desc">The sidebar shows live GPU VRAM and system RAM usage, updated
+                                every 5 seconds. Click the refresh icon to update instantly.</div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">OpenVINO Acceleration</div>
-                            <div class="help-item-desc">Models run locally using Intel's OpenVINO runtime. Check the sidebar to see which device (GPU/CPU) is active.</div>
+                            <div class="help-item-desc">Models run locally using Intel's OpenVINO runtime. Check the
+                                sidebar to see which device (GPU/CPU) is active.</div>
                         </div>
                     </div>
                 </div>
@@ -525,11 +553,14 @@
                     <div class="help-items">
                         <div class="help-item">
                             <div class="help-item-title">Inference Settings Menu</div>
-                            <div class="help-item-desc">Click the <strong>⚙️ Settings</strong> button in the top header. You can adjust the execution device, max response length, and context window size.</div>
+                            <div class="help-item-desc">Click the <strong>⚙️ Settings</strong> button in the top header.
+                                You can adjust the execution device, max response length, and context window size.</div>
                         </div>
                         <div class="help-item">
                             <div class="help-item-title">Context Window & Sliders</div>
-                            <div class="help-item-desc">Adjust max input tokens to prevent GPU memory overflow, and max new tokens to control response lengths. Click Save Settings to apply them dynamically.</div>
+                            <div class="help-item-desc">Adjust max input tokens to prevent GPU memory overflow, and max
+                                new tokens to control response lengths. Click Save Settings to apply them dynamically.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -595,15 +626,17 @@
             <div class="modal-header">
                 <div class="window-controls">
                     <button class="control-btn btn-close" id="model-browser-modal-close" title="Close">✕</button>
-                    <button class="control-btn btn-minimize" id="model-browser-modal-minimize" title="Minimize">─</button>
-                    <button class="control-btn btn-fullscreen" id="model-browser-modal-fullscreen" title="Fullscreen">⤢</button>
+                    <button class="control-btn btn-minimize" id="model-browser-modal-minimize"
+                        title="Minimize">─</button>
+                    <button class="control-btn btn-fullscreen" id="model-browser-modal-fullscreen"
+                        title="Fullscreen">⤢</button>
                 </div>
                 <div class="modal-title">
                     <span class="modal-title-icon">📁</span>
                     <span>Select Local OpenVINO Model</span>
                 </div>
             </div>
-            
+
             <!-- Path navigation bar -->
             <div class="fs-nav-bar">
                 <div class="fs-nav-shortcuts">
@@ -613,7 +646,8 @@
                     <button class="btn-fs-nav" id="btn-fs-root" title="Root Directory">💻 Root</button>
                 </div>
                 <div class="fs-path-input-wrapper">
-                    <input type="text" id="fs-path-input" placeholder="Enter absolute directory path..." title="Type path and press Enter or Go">
+                    <input type="text" id="fs-path-input" placeholder="Enter absolute directory path..."
+                        title="Type path and press Enter or Go">
                     <button class="btn-fs-go" id="btn-fs-go">Go</button>
                 </div>
             </div>
@@ -634,7 +668,7 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Right: Info & Preview Pane -->
                     <div class="fs-details-pane">
                         <div class="fs-details-header">Selected Item Details</div>
@@ -647,7 +681,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="modal-footer fs-modal-footer">
                 <div class="fs-modal-footer-left">
                     <span class="fs-selected-path-label">Selected:</span>
@@ -676,27 +710,31 @@
             <div class="modal-header">
                 <div class="window-controls">
                     <button class="control-btn btn-close" id="model-downloader-modal-close" title="Close">✕</button>
-                    <button class="control-btn btn-minimize" id="model-downloader-modal-minimize" title="Minimize">─</button>
-                    <button class="control-btn btn-fullscreen" id="model-downloader-modal-fullscreen" title="Fullscreen">⤢</button>
+                    <button class="control-btn btn-minimize" id="model-downloader-modal-minimize"
+                        title="Minimize">─</button>
+                    <button class="control-btn btn-fullscreen" id="model-downloader-modal-fullscreen"
+                        title="Fullscreen">⤢</button>
                 </div>
                 <div class="modal-title">
                     <span class="modal-title-icon">📥</span>
                     <span>Download & Export OpenVINO Model</span>
                 </div>
             </div>
-            
+
             <div class="modal-body downloader-modal-body">
                 <!-- Left: Search and Parameters -->
                 <div class="downloader-left-pane">
                     <!-- Search Section -->
                     <div class="downloader-section">
-                        <label class="setting-label-bold" for="downloader-search-input">Search Hugging Face Models</label>
+                        <label class="setting-label-bold" for="downloader-search-input">Search Hugging Face
+                            Models</label>
                         <div class="setting-description">Search the HF model hub (optimized for text generation).</div>
                         <div class="downloader-search-wrapper">
-                            <input type="text" id="downloader-search-input" class="downloader-search-input" placeholder="Search Qwen, Llama, Phi, etc..." value="qwen">
+                            <input type="text" id="downloader-search-input" class="downloader-search-input"
+                                placeholder="Search Qwen, Llama, Phi, etc..." value="qwen">
                             <button class="btn-downloader-search" id="btn-downloader-search">Search</button>
                         </div>
-                        
+
                         <!-- Search Results -->
                         <div class="downloader-results-container" id="downloader-results-container">
                             <div class="downloader-results-empty">
@@ -708,8 +746,10 @@
                     <div class="downloader-section">
                         <div class="downloader-param-row">
                             <div class="setting-item">
-                                <label class="setting-label-bold" for="downloader-model-id">Hugging Face Model ID</label>
-                                <input type="text" id="downloader-model-id" class="setting-select" placeholder="e.g., Qwen/Qwen2.5-0.5B-Instruct">
+                                <label class="setting-label-bold" for="downloader-model-id">Hugging Face Model
+                                    ID</label>
+                                <input type="text" id="downloader-model-id" class="setting-select"
+                                    placeholder="e.g., Qwen/Qwen2.5-0.5B-Instruct">
                             </div>
                         </div>
 
@@ -726,7 +766,8 @@
                             <div class="setting-item">
                                 <label class="setting-label-bold" for="downloader-task">Task Type</label>
                                 <select id="downloader-task" class="setting-select">
-                                    <option value="text-generation-with-past" selected>text-generation-with-past</option>
+                                    <option value="text-generation-with-past" selected>text-generation-with-past
+                                    </option>
                                     <option value="text-generation">text-generation</option>
                                 </select>
                             </div>
@@ -736,7 +777,8 @@
                             <div class="setting-item">
                                 <label class="setting-label-bold" for="downloader-output-dir">Local Folder Name</label>
                                 <div class="setting-description">Folder in your workspace to save the model.</div>
-                                <input type="text" id="downloader-output-dir" class="setting-select" placeholder="e.g., qwen-0.5b-ov">
+                                <input type="text" id="downloader-output-dir" class="setting-select"
+                                    placeholder="e.g., qwen-0.5b-ov">
                             </div>
                         </div>
                     </div>
@@ -751,11 +793,12 @@
                             <span id="downloader-job-status-text">No active job</span>
                         </div>
                     </div>
-                    
+
                     <div class="downloader-console-container">
                         <div class="downloader-console-output" id="downloader-console-output">
                             <!-- Logs will stream here -->
-                            <div class="console-placeholder">Console idle. Fill in parameters and click "Start Export".</div>
+                            <div class="console-placeholder">Console idle. Fill in parameters and click "Start Export".
+                            </div>
                         </div>
                         <div class="downloader-progress-wrap" id="downloader-progress-wrap" style="display: none;">
                             <div class="downloader-progress-bar">
@@ -770,7 +813,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="modal-footer downloader-modal-footer">
                 <div class="downloader-footer-info" id="downloader-footer-info">
                     Make sure you have enough disk space and a stable connection.
@@ -801,8 +844,10 @@
                 <!-- Directory Configuration Row (kept hidden to maintain state/browse references) -->
                 <div class="notes-dir-row" style="display: none;">
                     <span class="notes-dir-label">Storage Folder:</span>
-                    <input type="text" id="notes-dir-input" class="notes-dir-input" placeholder="e.g. ~/my-notes" title="Notes directory path">
-                    <button class="btn-notes-dir-browse" id="btn-notes-dir-browse" title="Browse directories on the server">Browse...</button>
+                    <input type="text" id="notes-dir-input" class="notes-dir-input" placeholder="e.g. ~/my-notes"
+                        title="Notes directory path">
+                    <button class="btn-notes-dir-browse" id="btn-notes-dir-browse"
+                        title="Browse directories on the server">Browse...</button>
                     <button class="btn-notes-dir-save" id="btn-notes-dir-save" title="Apply folder path">Apply</button>
                 </div>
                 <div class="notes-layout">
@@ -823,17 +868,19 @@
                             <div>No notes found</div>
                         </div>
                     </div>
-                    
+
                     <!-- Right content: note editor -->
                     <div class="notes-editor-pane">
                         <div class="notes-toolbar">
                             <div class="notes-toolbar-left">
                                 <button class="btn-tb-action" id="btn-tb-new" title="New Note (＋)">📄 New</button>
-                                <button class="btn-tb-action" id="btn-tb-open" title="Open Folder (📁)">📁 Open Folder</button>
+                                <button class="btn-tb-action" id="btn-tb-open" title="Open Folder (📁)">📁 Open
+                                    Folder</button>
                             </div>
                             <div class="notes-toolbar-right">
                                 <div class="notes-tb-dropdown-container">
-                                    <button class="btn-tb-action" id="btn-tb-settings" title="Editor Settings (⚙️)">⚙️ Settings <span class="chevron">▾</span></button>
+                                    <button class="btn-tb-action" id="btn-tb-settings" title="Editor Settings (⚙️)">⚙️
+                                        Settings <span class="chevron">▾</span></button>
                                     <div class="notes-settings-dropdown" id="notes-settings-dropdown">
                                         <div class="settings-dropdown-item">
                                             <label for="chk-syntax-highlight" class="checkbox-label">
@@ -855,12 +902,14 @@
                             </div>
                         </div>
                         <div class="notes-editor-header">
-                            <input type="text" id="notes-filename" class="notes-filename-input" placeholder="filename.txt" title="Filename for saving note">
+                            <input type="text" id="notes-filename" class="notes-filename-input"
+                                placeholder="filename.txt" title="Filename for saving note">
                         </div>
                         <div class="notes-editor-body">
                             <div class="notes-textarea-container">
                                 <pre id="notes-highlight-pre" class="notes-highlight-pre" aria-hidden="true"></pre>
-                                <textarea id="notes-textarea" class="notes-textarea" placeholder="Start typing your note here..."></textarea>
+                                <textarea id="notes-textarea" class="notes-textarea"
+                                    placeholder="Start typing your note here..."></textarea>
                             </div>
                         </div>
                         <div class="notes-editor-footer">
@@ -880,22 +929,26 @@
                     Saved in server's filesystem under <code>/notes</code>.
                 </div>
                 <div class="notes-actions">
-                    <button class="btn-notes-download" id="btn-notes-download" title="Download note locally to your machine">📥 Download</button>
-                    <button class="btn-notes-save" id="btn-notes-save" title="Save changes to server filesystem">💾 Save Note</button>
+                    <button class="btn-notes-download" id="btn-notes-download"
+                        title="Download note locally to your machine">📥 Download</button>
+                    <button class="btn-notes-save" id="btn-notes-save" title="Save changes to server filesystem">💾 Save
+                        Note</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Toast container -->
-    <div class="toast-container" id="toast-container"></div></div>
+    <div class="toast-container" id="toast-container"></div>
+    </div>
 
     <!-- Command Palette Modal -->
     <div class="palette-overlay" id="palette-overlay">
         <div class="palette-window" id="palette-window">
             <div class="palette-search-wrapper">
                 <span class="palette-search-icon">🔍</span>
-                <input type="text" id="palette-search-input" placeholder="Type a command or search conversations..." autocomplete="off">
+                <input type="text" id="palette-search-input" placeholder="Type a command or search conversations..."
+                    autocomplete="off">
                 <span class="palette-shortcut-hint">ESC to close</span>
             </div>
             <div class="palette-results" id="palette-results">
@@ -906,4 +959,5 @@
 
     <script src="/static/js/app.js"></script>
 </body>
+
 </html>
