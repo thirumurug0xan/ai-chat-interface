@@ -1430,6 +1430,12 @@ body {
     background: rgba(0, 206, 201, 0.1);
 }
 
+.toast.warning {
+    border-color: rgba(255, 165, 2, 0.4);
+    background: rgba(255, 165, 2, 0.1);
+    color: #ffa502;
+}
+
 @keyframes toastSlideIn {
     from {
         opacity: 0;
