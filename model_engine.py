@@ -31,6 +31,12 @@ def _is_gpu_oom_error(error: Exception) -> bool:
     return any(pattern.lower() in msg for pattern in _GPU_OOM_PATTERNS)
 
 
+def _is_use_cache_error(error: Exception) -> bool:
+    """Check if an exception is a use_cache incompatibility error."""
+    msg = str(error)
+    return "use_cache" in msg and "use_cache=False" in msg
+
+
 class ModelEngine:
     """Manages model loading and text generation for a single OpenVINO model."""
 
@@ -61,6 +67,8 @@ class ModelEngine:
         self._active_device = None      # Track which device is actually in use
         self._requested_device = self.device  # Track what the user requested
         self._switching = False         # True while a device switch is in progress
+        self._use_cache = True          # Whether to use KV-cache (some models require False)
+        self._last_load_warnings = []   # Warnings from the last load operation
 
     @property
     def model_name(self):
@@ -71,6 +79,8 @@ class ModelEngine:
         """Load the model and tokenizer. Call once at startup."""
         if self._loaded:
             return
+
+        self._last_load_warnings = []  # Reset warnings for this load attempt
 
         # Check if the path is explicitly intended to be a local path
         # but the directory does not exist. This avoids confusing Hugging Face Hub
@@ -103,13 +113,43 @@ class ModelEngine:
             try:
                 print(f"[ModelEngine] Loading {self.model_path} onto {device}...")
                 self.model = OVModelForCausalLM.from_pretrained(
-                    self.model_path, device=device, compile=True
+                    self.model_path, device=device, compile=True,
+                    use_cache=self._use_cache,
                 )
                 self._active_device = device
                 self._loaded = True
                 print(f"[ModelEngine] Model loaded successfully on {device}.")
                 return
             except Exception as e:
+                # Handle use_cache incompatibility: retry with use_cache=False
+                if _is_use_cache_error(e):
+                    print(f"[ModelEngine] use_cache=True not supported for this model. Retrying with use_cache=False...")
+                    self._use_cache = False
+                    self._last_load_warnings.append(
+                        "This model was exported without KV-cache support. "
+                        "Loaded with use_cache=False — generation may be slower."
+                    )
+                    self.model = None
+                    gc.collect()
+                    try:
+                        self.model = OVModelForCausalLM.from_pretrained(
+                            self.model_path, device=device, compile=True,
+                            use_cache=False,
+                        )
+                        self._active_device = device
+                        self._loaded = True
+                        print(f"[ModelEngine] Model loaded successfully on {device} with use_cache=False.")
+                        return
+                    except Exception as e2:
+                        if device != "CPU" and ("GPU" in device.upper() or "HETERO" in device.upper()):
+                            print(f"[ModelEngine] Failed to load on {device} even with use_cache=False: {e2}")
+                            print(f"[ModelEngine] Falling back to next device...")
+                            self.model = None
+                            gc.collect()
+                            continue
+                        else:
+                            raise
+
                 if _is_gpu_oom_error(e) and device != "CPU":
                     print(f"[ModelEngine] GPU memory error on {device}: {e}")
                     print(f"[ModelEngine] Falling back to next device...")
@@ -150,7 +190,7 @@ class ModelEngine:
             new_model_path: Path to the new model directory.
 
         Returns:
-            Dict with keys: success, model_name, model_path, message.
+            Dict with keys: success, model_name, model_path, message, warnings.
         """
         new_model_path = os.path.abspath(new_model_path.strip())
         if not os.path.isdir(new_model_path):
@@ -159,6 +199,7 @@ class ModelEngine:
                 "model_name": self.model_name,
                 "model_path": self.model_path,
                 "message": f"Model directory does not exist: {new_model_path}",
+                "warnings": [],
             }
 
         if self._switching:
@@ -167,10 +208,12 @@ class ModelEngine:
                 "model_name": self.model_name,
                 "model_path": self.model_path,
                 "message": "A device or model switch is already in progress. Please wait.",
+                "warnings": [],
             }
 
         previous_path = self.model_path
         previous_loaded = self._loaded
+        previous_use_cache = self._use_cache
 
         self._switching = True
         try:
@@ -178,6 +221,7 @@ class ModelEngine:
                 self._unload()
                 self.model_path = new_model_path
                 self.tokenizer = None  # Force tokenizer reload
+                self._use_cache = True  # Reset for new model; load() will adjust if needed
                 
                 try:
                     self.load()
@@ -186,12 +230,14 @@ class ModelEngine:
                         "model_name": self.model_name,
                         "model_path": self.model_path,
                         "message": f"Successfully loaded model: {self.model_name}",
+                        "warnings": list(self._last_load_warnings),
                     }
                 except Exception as e:
                     print(f"[ModelEngine] Failed to load new model from {new_model_path}: {e}")
                     # Try to roll back to the previous path
                     self.model_path = previous_path
                     self.tokenizer = None
+                    self._use_cache = previous_use_cache  # Restore previous use_cache setting
                     try:
                         self.load()
                         return {
@@ -199,6 +245,7 @@ class ModelEngine:
                             "model_name": self.model_name,
                             "model_path": self.model_path,
                             "message": f"Failed to load model from {new_model_path}: {str(e)}. Successfully reverted to previous model: {self.model_name}.",
+                            "warnings": list(self._last_load_warnings),
                         }
                     except Exception as e2:
                         print(f"[ModelEngine] CRITICAL: Failed to reload previous model from {previous_path}: {e2}")
@@ -207,6 +254,7 @@ class ModelEngine:
                             "model_name": "None",
                             "model_path": "None",
                             "message": f"Failed to load model from {new_model_path} and failed to revert to previous model. Engine is offline.",
+                            "warnings": [],
                         }
         finally:
             self._switching = False

@@ -2689,6 +2689,10 @@ async function loadModelFromPath() {
 
         if (data.success) {
             showToast(data.message || `Loaded model: ${data.model_name}`, "success");
+            // Show any warnings from the load process (e.g. use_cache=False fallback)
+            if (data.warnings && data.warnings.length > 0) {
+                data.warnings.forEach(w => showToast(w, "warning"));
+            }
         } else {
             showToast(data.message || `Failed to load model`, "error");
         }
@@ -2905,6 +2909,10 @@ async function handleStartExport() {
                 const data = await res.json();
                 if (data.success) {
                     showToast(`Successfully loaded downloaded model!`, "success");
+                    // Show any warnings from the load process
+                    if (data.warnings && data.warnings.length > 0) {
+                        data.warnings.forEach(w => showToast(w, "warning"));
+                    }
                     await fetchConfig();
                 } else {
                     showToast(`Failed to load model: ${data.message}`, "error");
