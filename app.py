@@ -377,15 +377,16 @@ def fs_list():
             entry_path = os.path.join(target_path, entry)
             is_dir = os.path.isdir(entry_path)
 
-            # Check if directory looks like an OpenVINO model folder
+            # Check if directory looks like an OpenVINO model folder or cache folder
             is_model = False
             if is_dir:
                 try:
                     files = os.listdir(entry_path)
                     files_lower = [f.lower() for f in files]
                     has_config = "config.json" in files_lower
-                    xml_files = [f for f in files if f.endswith(".xml") and "openvino" in f.lower()]
-                    is_model = has_config and (len(xml_files) > 0 or "openvino_model.xml" in files_lower)
+                    xml_files = [f for f in files if f.endswith(".xml")]
+                    has_cache = any(f.endswith(".cl_cache") or f.endswith(".blob") or "onednn" in f for f in files_lower)
+                    is_model = (has_config and (len(xml_files) > 0 or "openvino_model.xml" in files_lower)) or has_cache
                 except Exception:
                     pass
 
@@ -439,6 +440,7 @@ def model_switch():
         fix_mistral_regex = data.get("fix_mistral_regex")
         ov_performance_hint = data.get("ov_performance_hint")
         ov_cache_dir = data.get("ov_cache_dir")
+        base_model = data.get("base_model")
 
         result = engine.switch_model(
             requested_path,
@@ -447,7 +449,8 @@ def model_switch():
             trust_remote_code=trust_remote_code,
             fix_mistral_regex=fix_mistral_regex,
             ov_performance_hint=ov_performance_hint,
-            ov_cache_dir=ov_cache_dir
+            ov_cache_dir=ov_cache_dir,
+            base_model=base_model
         )
         return jsonify(result)
     except Exception as e:

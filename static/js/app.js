@@ -2564,27 +2564,37 @@ async function renderDetailsPane(entry) {
             const hasConfig = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "config.json");
             const xmlFiles = filesList.filter(f => !f.is_dir && f.name.endsWith(".xml"));
             const hasXmlModel = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "openvino_model.xml");
-            const isValidModel = hasConfig && (xmlFiles.length > 0 || hasXmlModel);
+            const hasCacheFiles = filesList.some(f => !f.is_dir && (f.name.endsWith(".cl_cache") || f.name.endsWith(".blob") || f.name.toLowerCase().includes("onednn")));
+            const isValidModel = (hasConfig && (xmlFiles.length > 0 || hasXmlModel)) || hasCacheFiles;
+
             if (isValidModel) {
-                badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
+                if (hasCacheFiles && !hasXmlModel) {
+                    badgeHtml = `<div class="fs-model-badge valid" style="background: rgba(0, 184, 148, 0.15); color: #00b894;">💾 OpenVINO Cache Folder</div>`;
+                } else {
+                    badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
+                }
                 if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
             } else {
                 badgeHtml = `<div class="fs-model-badge invalid">⚠️ Regular Folder</div>`;
-                let warningText = "No model XML files detected in this folder. Loading it as a model path might fail unless it contains valid config/model files.";
-                if (!hasConfig && (xmlFiles.length > 0 || hasXmlModel)) {
-                    warningText = "No config.json detected (found XML files, but this may be an OpenVINO compilation cache directory like 'ov_cache_3b'). Loading it as a model will fail.";
-                } else if (!hasConfig) {
-                    warningText = "No config.json or model XML files detected in this folder. Loading it as a model path will fail.";
-                } else {
-                    warningText = "No model XML files detected in this folder. The model must be exported to OpenVINO format (containing .xml/.bin files) before loading.";
-                }
-                warningHtml = `
-                    <div style="font-size: 11.5px; color: #ffa502; line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 165, 2, 0.05); border: 1px solid rgba(255, 165, 2, 0.15); border-radius: 6px;">
-                        <strong>Note:</strong> ${warningText}
-                    </div>
-                `;
                 if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
             }
+
+            let warningText = "";
+            if (hasCacheFiles && !hasXmlModel) {
+                warningText = "Detected OpenVINO compilation cache files. To load this cache, please specify the Base Model ID/path in the settings below.";
+            } else if (!hasConfig && (xmlFiles.length > 0 || hasXmlModel)) {
+                warningText = "No config.json detected (found XML files). This could be loaded directly as a compiled OpenVINO IR model.";
+            } else if (!hasConfig) {
+                warningText = "No config.json or model XML files detected. If you want to load this as a cache folder or local path, specify the Base Model ID/path below.";
+            } else {
+                warningText = "No model XML files detected in this folder. The model must be exported to OpenVINO format (containing .xml/.bin files) before loading, or you can specify the Base Model ID below.";
+            }
+
+            warningHtml = `
+                <div style="font-size: 11.5px; color: #ffa502; line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 165, 2, 0.05); border: 1px solid rgba(255, 165, 2, 0.15); border-radius: 6px;">
+                    <strong>Note:</strong> ${warningText}
+                </div>
+            `;
 
             let xmlOptionsHtml = '<option value="">Default (openvino_model.xml)</option>';
             xmlFiles.forEach(x => {
@@ -2593,12 +2603,19 @@ async function renderDetailsPane(entry) {
                 }
             });
 
+            const currentBaseModel = state.modelConfig?.base_model || "";
+            const currentCacheDir = state.modelConfig?.ov_config?.CACHE_DIR || (hasCacheFiles ? entry.path : "./ov_cache");
             const configFormHtml = `
                 <div class="model-config-form" style="margin-top: 15px; padding: 12px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: 8px;">
                     <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px; color: var(--text-primary); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; display: flex; align-items: center; gap: 5px;">
                         <span>⚙️</span> OpenVINO Settings
                     </div>
                     
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Base Model ID / Path</label>
+                        <input type="text" id="model-config-base" value="${escapeHtml(currentBaseModel)}" placeholder="e.g. OpenVINO/Qwen2.5-Coder-3B-Instruct-int8-ov" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; box-sizing: border-box; outline: none;">
+                    </div>
+
                     <div style="margin-bottom: 8px;">
                         <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Performance Hint</label>
                         <select id="model-config-perf" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; outline: none;">
@@ -2611,7 +2628,7 @@ async function renderDetailsPane(entry) {
                     
                     <div style="margin-bottom: 8px;">
                         <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Cache Directory</label>
-                        <input type="text" id="model-config-cache" value="./ov_cache" placeholder="e.g. ./ov_cache" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; box-sizing: border-box; outline: none;">
+                        <input type="text" id="model-config-cache" value="${escapeHtml(currentCacheDir)}" placeholder="e.g. ./ov_cache" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; box-sizing: border-box; outline: none;">
                     </div>
                     
                     <div style="margin-bottom: 8px;">
@@ -2727,6 +2744,7 @@ async function loadModelFromPath() {
     const useCacheEl = document.getElementById("model-config-use-cache");
     const trustRemoteEl = document.getElementById("model-config-trust-remote");
     const fixRegexEl = document.getElementById("model-config-fix-regex");
+    const baseModelEl = document.getElementById("model-config-base");
 
     const payload = { model_path: targetModelPath };
     if (perfHintEl) payload.ov_performance_hint = perfHintEl.value;
@@ -2735,6 +2753,7 @@ async function loadModelFromPath() {
     if (useCacheEl) payload.use_cache = useCacheEl.checked;
     if (trustRemoteEl) payload.trust_remote_code = trustRemoteEl.checked;
     if (fixRegexEl) payload.fix_mistral_regex = fixRegexEl.checked;
+    if (baseModelEl) payload.base_model = baseModelEl.value.trim();
 
     if (dom.modelSwitchingTitle) {
         dom.modelSwitchingTitle.textContent = `Loading OpenVINO Model...`;
