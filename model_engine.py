@@ -120,11 +120,18 @@ class ModelEngine:
             ".." in self.model_path or
             os.path.isdir(self.model_path)
         )
-        if is_local and not os.path.isdir(self.model_path):
-            raise FileNotFoundError(
-                f"Local model directory does not exist: '{self.model_path}'. "
-                f"Please check your path configuration."
-            )
+        if is_local:
+            if not os.path.isdir(self.model_path):
+                raise FileNotFoundError(
+                    f"Local model directory does not exist: '{self.model_path}'. "
+                    f"Please check your path configuration."
+                )
+            if not os.path.isfile(os.path.join(self.model_path, "config.json")):
+                raise FileNotFoundError(
+                    f"Invalid model directory: '{self.model_path}'. "
+                    f"A valid Hugging Face / Optimum model directory must contain a 'config.json' file. "
+                    f"Please verify that this is a model directory and not a cache directory (like 'ov_cache_3b')."
+                )
 
         # Import here so the app can start even if openvino isn't installed
         # (useful for front-end-only development/testing)

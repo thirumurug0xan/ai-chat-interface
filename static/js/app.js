@@ -2561,17 +2561,26 @@ async function renderDetailsPane(entry) {
             `;
             if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
         } else {
+            const hasConfig = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "config.json");
             const xmlFiles = filesList.filter(f => !f.is_dir && f.name.endsWith(".xml"));
             const hasXmlModel = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "openvino_model.xml");
-            const isValidModel = xmlFiles.length > 0 || hasXmlModel;
+            const isValidModel = hasConfig && (xmlFiles.length > 0 || hasXmlModel);
             if (isValidModel) {
                 badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
                 if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
             } else {
                 badgeHtml = `<div class="fs-model-badge invalid">⚠️ Regular Folder</div>`;
+                let warningText = "No model XML files detected in this folder. Loading it as a model path might fail unless it contains valid config/model files.";
+                if (!hasConfig && (xmlFiles.length > 0 || hasXmlModel)) {
+                    warningText = "No config.json detected (found XML files, but this may be an OpenVINO compilation cache directory like 'ov_cache_3b'). Loading it as a model will fail.";
+                } else if (!hasConfig) {
+                    warningText = "No config.json or model XML files detected in this folder. Loading it as a model path will fail.";
+                } else {
+                    warningText = "No model XML files detected in this folder. The model must be exported to OpenVINO format (containing .xml/.bin files) before loading.";
+                }
                 warningHtml = `
                     <div style="font-size: 11.5px; color: #ffa502; line-height: 1.5; margin-top: 10px; padding: 10px; background: rgba(255, 165, 2, 0.05); border: 1px solid rgba(255, 165, 2, 0.15); border-radius: 6px;">
-                        <strong>Note:</strong> No model XML files detected in this folder. Loading it as a model path might fail unless it contains valid config/model files.
+                        <strong>Note:</strong> ${warningText}
                     </div>
                 `;
                 if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
