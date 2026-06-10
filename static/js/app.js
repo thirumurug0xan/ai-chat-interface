@@ -2576,6 +2576,56 @@ async function renderDetailsPane(entry) {
                 `;
                 if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
             }
+
+            let xmlOptionsHtml = '<option value="">Default (openvino_model.xml)</option>';
+            xmlFiles.forEach(x => {
+                if (x.name.toLowerCase() !== "openvino_model.xml") {
+                    xmlOptionsHtml += `<option value="${escapeHtml(x.name)}">${escapeHtml(x.name)}</option>`;
+                }
+            });
+
+            const configFormHtml = `
+                <div class="model-config-form" style="margin-top: 15px; padding: 12px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: 8px;">
+                    <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px; color: var(--text-primary); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; display: flex; align-items: center; gap: 5px;">
+                        <span>⚙️</span> OpenVINO Settings
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Performance Hint</label>
+                        <select id="model-config-perf" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; outline: none;">
+                            <option value="LATENCY" selected>LATENCY (Recommended)</option>
+                            <option value="THROUGHPUT">THROUGHPUT</option>
+                            <option value="CUMULATIVE_THROUGHPUT">CUMULATIVE_THROUGHPUT</option>
+                            <option value="NONE">None</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Cache Directory</label>
+                        <input type="text" id="model-config-cache" value="./ov_cache" placeholder="e.g. ./ov_cache" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; box-sizing: border-box; outline: none;">
+                    </div>
+                    
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Model XML File</label>
+                        <select id="model-config-file" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; outline: none;">
+                            ${xmlOptionsHtml}
+                        </select>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px;">
+                        <label style="display: flex; align-items: center; font-size: 11px; color: var(--text-secondary); cursor: pointer; user-select: none;">
+                            <input type="checkbox" id="model-config-use-cache" checked style="margin-right: 6px; accent-color: var(--accent-primary, #007acc);"> Use Key-Value (KV) Cache
+                        </label>
+                        <label style="display: flex; align-items: center; font-size: 11px; color: var(--text-secondary); cursor: pointer; user-select: none;">
+                            <input type="checkbox" id="model-config-trust-remote" checked style="margin-right: 6px; accent-color: var(--accent-primary, #007acc);"> Trust Remote Code
+                        </label>
+                        <label style="display: flex; align-items: center; font-size: 11px; color: var(--text-secondary); cursor: pointer; user-select: none;">
+                            <input type="checkbox" id="model-config-fix-regex" checked style="margin-right: 6px; accent-color: var(--accent-primary, #007acc);"> Fix Mistral/Qwen Regex
+                        </label>
+                    </div>
+                </div>
+            `;
+            warningHtml += configFormHtml;
         }
 
         let filesHtml = "";
@@ -2661,6 +2711,22 @@ async function loadModelFromPath() {
 
     const targetModelPath = fsState.selectedPath;
 
+    // Retrieve form settings from DOM
+    const perfHintEl = document.getElementById("model-config-perf");
+    const cacheDirEl = document.getElementById("model-config-cache");
+    const modelFileEl = document.getElementById("model-config-file");
+    const useCacheEl = document.getElementById("model-config-use-cache");
+    const trustRemoteEl = document.getElementById("model-config-trust-remote");
+    const fixRegexEl = document.getElementById("model-config-fix-regex");
+
+    const payload = { model_path: targetModelPath };
+    if (perfHintEl) payload.ov_performance_hint = perfHintEl.value;
+    if (cacheDirEl) payload.ov_cache_dir = cacheDirEl.value.trim();
+    if (modelFileEl) payload.model_file = modelFileEl.value;
+    if (useCacheEl) payload.use_cache = useCacheEl.checked;
+    if (trustRemoteEl) payload.trust_remote_code = trustRemoteEl.checked;
+    if (fixRegexEl) payload.fix_mistral_regex = fixRegexEl.checked;
+
     if (dom.modelSwitchingTitle) {
         dom.modelSwitchingTitle.textContent = `Loading OpenVINO Model...`;
     }
@@ -2677,7 +2743,7 @@ async function loadModelFromPath() {
         const res = await fetch("/api/model/switch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model_path: targetModelPath })
+            body: JSON.stringify(payload)
         });
 
         if (!res.ok) {

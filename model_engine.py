@@ -67,7 +67,34 @@ class ModelEngine:
         self._active_device = None      # Track which device is actually in use
         self._requested_device = self.device  # Track what the user requested
         self._switching = False         # True while a device switch is in progress
-        self._use_cache = True          # Whether to use KV-cache (some models require False)
+
+        # Load KV-cache configuration from environment
+        use_cache_env = os.getenv("USE_CACHE", "True").lower() in ("true", "1", "yes")
+        self._use_cache = use_cache_env
+        self.model_file = os.getenv("MODEL_FILE_NAME", "").strip() or None
+
+        # Tokenizer options
+        self.trust_remote_code = os.getenv("TRUST_REMOTE_CODE", "True").lower() in ("true", "1", "yes")
+        self.fix_mistral_regex = os.getenv("FIX_MISTRAL_REGEX", "True").lower() in ("true", "1", "yes")
+
+        # Load custom ov_config
+        self.ov_config = {}
+        ov_config_str = os.getenv("OV_CONFIG", "").strip()
+        if ov_config_str:
+            try:
+                import json
+                self.ov_config = json.loads(ov_config_str)
+            except Exception as e:
+                print(f"[ModelEngine] Warning: Failed to parse OV_CONFIG JSON: {e}")
+        else:
+            # Fall back to default structure: PERFORMANCE_HINT and CACHE_DIR
+            perf_hint = os.getenv("OV_PERFORMANCE_HINT", "LATENCY").strip()
+            cache_dir = os.getenv("OV_CACHE_DIR", "./ov_cache").strip()
+            if perf_hint:
+                self.ov_config["PERFORMANCE_HINT"] = perf_hint
+            if cache_dir:
+                self.ov_config["CACHE_DIR"] = os.path.expanduser(cache_dir)
+
         self._last_load_warnings = []   # Warnings from the last load operation
 
     @property
@@ -104,17 +131,42 @@ class ModelEngine:
         from optimum.intel.openvino import OVModelForCausalLM
         from transformers import AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        # Load tokenizer with parameters
+        if self.tokenizer is None:
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_path,
+                    trust_remote_code=self.trust_remote_code,
+                    fix_mistral_regex=self.fix_mistral_regex
+                )
+            except TypeError as e:
+                if "fix_mistral_regex" in str(e):
+                    print("[ModelEngine] fix_mistral_regex parameter not supported by AutoTokenizer. Retrying without it...")
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        self.model_path,
+                        trust_remote_code=self.trust_remote_code
+                    )
+                else:
+                    raise
 
         # Try loading with requested device, fall back to CPU on failure
         device_order = self._get_device_fallback_order()
 
         for device in device_order:
             try:
-                print(f"[ModelEngine] Loading {self.model_path} onto {device}...")
+                print(f"[ModelEngine] Loading {self.model_path} onto {device} with use_cache={self._use_cache} and ov_config={self.ov_config}...")
+                model_kwargs = {
+                    "device": device,
+                    "compile": True,
+                    "use_cache": self._use_cache,
+                }
+                if self.ov_config:
+                    model_kwargs["ov_config"] = self.ov_config
+                if self.model_file:
+                    model_kwargs["file_name"] = self.model_file
+
                 self.model = OVModelForCausalLM.from_pretrained(
-                    self.model_path, device=device, compile=True,
-                    use_cache=self._use_cache,
+                    self.model_path, **model_kwargs
                 )
                 self._active_device = device
                 self._loaded = True
@@ -132,9 +184,18 @@ class ModelEngine:
                     self.model = None
                     gc.collect()
                     try:
+                        retry_kwargs = {
+                            "device": device,
+                            "compile": True,
+                            "use_cache": False,
+                        }
+                        if self.ov_config:
+                            retry_kwargs["ov_config"] = self.ov_config
+                        if self.model_file:
+                            retry_kwargs["file_name"] = self.model_file
+
                         self.model = OVModelForCausalLM.from_pretrained(
-                            self.model_path, device=device, compile=True,
-                            use_cache=False,
+                            self.model_path, **retry_kwargs
                         )
                         self._active_device = device
                         self._loaded = True
@@ -179,15 +240,32 @@ class ModelEngine:
         gc.collect()
         print("[ModelEngine] Model unloaded.")
 
-    def switch_model(self, new_model_path: str) -> dict:
+    def switch_model(
+        self,
+        new_model_path: str,
+        use_cache: bool = None,
+        model_file: str = None,
+        trust_remote_code: bool = None,
+        fix_mistral_regex: bool = None,
+        ov_config: dict = None,
+        ov_performance_hint: str = None,
+        ov_cache_dir: str = None,
+    ) -> dict:
         """
         Switch to a different model at runtime.
 
-        Unloads the current model, updates the model path,
-        and reloads. Falls back to the previous model on failure.
+        Unloads the current model, updates the model path and configuration,
+        and reloads. Falls back to the previous model and settings on failure.
 
         Args:
             new_model_path: Path to the new model directory.
+            use_cache: Optional override for KV-cache generation.
+            model_file: Optional override for model XML file name.
+            trust_remote_code: Optional override for trust_remote_code tokenizer parameter.
+            fix_mistral_regex: Optional override for fix_mistral_regex tokenizer parameter.
+            ov_config: Optional full custom OpenVINO configuration mapping.
+            ov_performance_hint: Optional OpenVINO performance hint override.
+            ov_cache_dir: Optional OpenVINO compiler cache directory override.
 
         Returns:
             Dict with keys: success, model_name, model_path, message, warnings.
@@ -214,6 +292,10 @@ class ModelEngine:
         previous_path = self.model_path
         previous_loaded = self._loaded
         previous_use_cache = self._use_cache
+        previous_model_file = self.model_file
+        previous_trust_remote = self.trust_remote_code
+        previous_fix_mistral = self.fix_mistral_regex
+        previous_ov_config = self.ov_config
 
         self._switching = True
         try:
@@ -221,7 +303,52 @@ class ModelEngine:
                 self._unload()
                 self.model_path = new_model_path
                 self.tokenizer = None  # Force tokenizer reload
-                self._use_cache = True  # Reset for new model; load() will adjust if needed
+                
+                # Apply new options if specified, otherwise fall back to environment defaults
+                if use_cache is not None:
+                    self._use_cache = use_cache
+                else:
+                    self._use_cache = os.getenv("USE_CACHE", "True").lower() in ("true", "1", "yes")
+
+                if model_file is not None:
+                    self.model_file = model_file.strip() or None
+                else:
+                    self.model_file = os.getenv("MODEL_FILE_NAME", "").strip() or None
+
+                if trust_remote_code is not None:
+                    self.trust_remote_code = trust_remote_code
+                else:
+                    self.trust_remote_code = os.getenv("TRUST_REMOTE_CODE", "True").lower() in ("true", "1", "yes")
+
+                if fix_mistral_regex is not None:
+                    self.fix_mistral_regex = fix_mistral_regex
+                else:
+                    self.fix_mistral_regex = os.getenv("FIX_MISTRAL_REGEX", "True").lower() in ("true", "1", "yes")
+
+                if ov_config is not None:
+                    self.ov_config = ov_config
+                elif ov_performance_hint is not None or ov_cache_dir is not None:
+                    self.ov_config = {}
+                    if ov_performance_hint:
+                        self.ov_config["PERFORMANCE_HINT"] = ov_performance_hint
+                    if ov_cache_dir:
+                        self.ov_config["CACHE_DIR"] = os.path.expanduser(ov_cache_dir)
+                else:
+                    self.ov_config = {}
+                    ov_config_str = os.getenv("OV_CONFIG", "").strip()
+                    if ov_config_str:
+                        try:
+                            import json
+                            self.ov_config = json.loads(ov_config_str)
+                        except Exception as e:
+                            print(f"[ModelEngine] Warning: Failed to parse OV_CONFIG JSON: {e}")
+                    else:
+                        perf_hint = os.getenv("OV_PERFORMANCE_HINT", "LATENCY").strip()
+                        cache_dir = os.getenv("OV_CACHE_DIR", "./ov_cache").strip()
+                        if perf_hint:
+                            self.ov_config["PERFORMANCE_HINT"] = perf_hint
+                        if cache_dir:
+                            self.ov_config["CACHE_DIR"] = os.path.expanduser(cache_dir)
                 
                 try:
                     self.load()
@@ -234,10 +361,14 @@ class ModelEngine:
                     }
                 except Exception as e:
                     print(f"[ModelEngine] Failed to load new model from {new_model_path}: {e}")
-                    # Try to roll back to the previous path
+                    # Try to roll back to the previous path and configuration
                     self.model_path = previous_path
                     self.tokenizer = None
-                    self._use_cache = previous_use_cache  # Restore previous use_cache setting
+                    self._use_cache = previous_use_cache
+                    self.model_file = previous_model_file
+                    self.trust_remote_code = previous_trust_remote
+                    self.fix_mistral_regex = previous_fix_mistral
+                    self.ov_config = previous_ov_config
                     try:
                         self.load()
                         return {
@@ -421,6 +552,11 @@ class ModelEngine:
             "max_history": self.max_history,
             "max_input_tokens": self.max_input_tokens,
             "loaded": self._loaded,
+            "use_cache": self._use_cache,
+            "model_file": self.model_file,
+            "trust_remote_code": self.trust_remote_code,
+            "fix_mistral_regex": self.fix_mistral_regex,
+            "ov_config": self.ov_config,
         }
 
     def _trim_history_to_fit(self, history: list[dict]) -> list[dict]:

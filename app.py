@@ -430,7 +430,23 @@ def model_switch():
         }), 409
 
     try:
-        result = engine.switch_model(requested_path)
+        # Extract optional configuration options from the request body
+        use_cache = data.get("use_cache")
+        model_file = data.get("model_file")
+        trust_remote_code = data.get("trust_remote_code")
+        fix_mistral_regex = data.get("fix_mistral_regex")
+        ov_performance_hint = data.get("ov_performance_hint")
+        ov_cache_dir = data.get("ov_cache_dir")
+
+        result = engine.switch_model(
+            requested_path,
+            use_cache=use_cache,
+            model_file=model_file,
+            trust_remote_code=trust_remote_code,
+            fix_mistral_regex=fix_mistral_regex,
+            ov_performance_hint=ov_performance_hint,
+            ov_cache_dir=ov_cache_dir
+        )
         return jsonify(result)
     except Exception as e:
         traceback.print_exc()
