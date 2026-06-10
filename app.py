@@ -382,8 +382,10 @@ def fs_list():
             if is_dir:
                 try:
                     files = os.listdir(entry_path)
+                    files_lower = [f.lower() for f in files]
+                    has_config = "config.json" in files_lower
                     xml_files = [f for f in files if f.endswith(".xml") and "openvino" in f.lower()]
-                    is_model = len(xml_files) > 0 or "openvino_model.xml" in files
+                    is_model = has_config and (len(xml_files) > 0 or "openvino_model.xml" in files_lower)
                 except Exception:
                     pass
 

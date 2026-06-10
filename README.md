@@ -1,78 +1,88 @@
-# 🧠 AI Chat Interface
+# 🧠 local-ai-workstation (AI Chat Interface for Intel OpenVINO)
 
-A premium web-based chat interface for local AI models powered by [Intel OpenVINO](https://docs.openvino.ai/). Features streaming responses, conversation history, and a sleek dark theme.
+A premium, lightweight, local AI workstation and chat interface designed specifically for Intel hardware. Powered by [Intel OpenVINO](https://docs.openvino.ai/) and Hugging Face's `optimum-intel`, this repository provides a complete web workspace to download, export, dynamically configure, and chat with local LLMs, while managing server notes and monitoring hardware resources.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Flask](https://img.shields.io/badge/Flask-3.0-green)
 ![OpenVINO](https://img.shields.io/badge/OpenVINO-Optimized-purple)
+![Intel GPU](https://img.shields.io/badge/Intel%20GPU-Accelerated-blue)
 
 ---
 
-## ✨ Features
+## ✨ Key Pillars
 
-- **🚀 Streaming Responses** — Token-by-token output via Server-Sent Events (SSE)
-- **💬 Conversation History** — Multiple conversations stored in browser localStorage
-- **🎨 Premium Dark UI** — Glassmorphism design with smooth animations
-- **⚡ OpenVINO Accelerated** — Runs on Intel GPU or CPU
-- **📋 Code Blocks** — Syntax display with one-click copy
-- **📱 Responsive** — Works on desktop and mobile
-- **⚙️ Configurable** — Customize model, device, and token limits via `.env`
+### 1. 💬 Optimized Chat Interface
+- **Server-Sent Events (SSE)**: Real-time, token-by-token streaming responses.
+- **Hardware Acceleration**: Built-in support for Intel GPU, CPU, and NPU inference, with automatic CPU fallback.
+- **Context Management**: Auto-trims conversational history to respect input context limitations and prevent out-of-memory (OOM) failures.
+
+### 2. 📁 Filesystem Explorer & Dynamic GUI Loader
+- **Local Browser**: Browse the server's directory tree directly from the web GUI to locate model folders.
+- **On-the-Fly Configuration**: Select a folder and configure performance parameters *without* editing `.env` files:
+  - **Performance Hint**: Choose between `LATENCY` (default), `THROUGHPUT`, or `CUMULATIVE_THROUGHPUT`.
+  - **Compilation Caching**: Enable compiled graph storage (`ov_cache`) to speed up subsequent load requests.
+  - **Custom Model file**: Choose which `.xml` file to compile from the selected directory (useful for loaded subgraphs or multiple quantized layouts).
+  - **Parameters**: Suppress regex warnings, toggle KV-cache, and toggle remote code execution on startup.
+
+### 3. 📥 Background Model Downloader & Exporter
+- **Hugging Face Search**: Query the Hugging Face Hub directly inside the browser.
+- **Dynamic Conversion**: Run `optimum-cli` conversion pipelines in a background thread to export models to OpenVINO IR format (FP16, INT8, INT4 quantization).
+- **Log Streaming**: Monitor model download and compilation logs live via SSE stream in the UI.
+
+### 4. 📝 Mousepad (Workspace Notes)
+- **Document Workspace**: Access, edit, rename, and organize Markdown (`.md`) or text (`.txt`) notes on the server alongside your chat window.
+- **Directory Selection**: Securely map custom server note paths from the UI explorer.
+
+### 5. 📊 Live System Resource Monitor
+- **GPU Stats**: Real-time monitoring of Intel GPU utilization, memory usage (VRAM), and active device status.
+- **NVIDIA Fallback**: Supports NVIDIA GPU monitoring via `nvidia-smi` where available.
+- **System Memory**: CPU cores, CPU utilization, and System RAM metrics.
 
 ---
 
 ## 📋 Prerequisites
 
 - **Python 3.10+**
-- **Intel GPU drivers** (if using GPU inference)
-- **OpenVINO Runtime** (installed via `optimum[openvino]`)
-- **A compatible model** in OpenVINO format (e.g., `qwen-0.5b-ov`)
+- **Intel GPU Drivers** (if targeting GPU acceleration; CPU is supported out of the box)
+- **OpenVINO Runtime** (installed automatically via `optimum[openvino]`)
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Clone / Navigate to the project
-
+### 1. Clone & Navigate
 ```bash
-cd ai-chat-interface
+git clone https://github.com/<your-username>/local-ai-workstation.git
+cd local-ai-workstation
 ```
 
-### 2. Create a virtual environment (recommended)
-
+### 2. Create Virtual Environment
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 # or: venv\Scripts\activate  # Windows
 ```
 
-### 3. Install dependencies
-
+### 3. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure your model
-
-Edit the `.env` file:
-
+### 4. Configure Template
+Copy `.env.example` to `.env` and configure your default paths:
 ```env
-MODEL_PATH=./qwen-0.5b-ov    # Path to your OpenVINO model
-DEVICE=GPU                     # GPU, CPU, or AUTO
-MAX_NEW_TOKENS=512             # Max tokens per response
-MAX_HISTORY=20                 # Max messages to keep in context
-HOST=0.0.0.0                  # Server host
-PORT=5000                     # Server port
+MODEL_PATH=./qwen-0.5b-ov    # Path to default local model
+DEVICE=AUTO                    # AUTO, GPU, CPU, or XPU
+USE_CACHE=True                # Enable KV caching
+OV_CACHE_DIR=./ov_cache       # Compile cache folder
+PORT=5000
 ```
 
-### 5. Run the server
-
+### 5. Start Workspace
 ```bash
 python app.py
 ```
-
-### 6. Open the chat
-
-Navigate to **http://localhost:5000** in your browser.
+Open **http://localhost:5000** in your browser.
 
 ---
 
@@ -80,82 +90,35 @@ Navigate to **http://localhost:5000** in your browser.
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Serves the chat UI |
-| `/api/health` | GET | Health check — `{"status": "ok", "model_loaded": true}` |
-| `/api/config` | GET | Returns model configuration |
-| `/api/chat` | POST | Streaming chat via SSE |
-| `/api/chat/sync` | POST | Non-streaming chat (fallback) |
-
-### POST `/api/chat`
-
-**Request:**
-```json
-{
-    "messages": [
-        {"role": "user", "content": "Hello!"},
-        {"role": "assistant", "content": "Hi there!"},
-        {"role": "user", "content": "How are you?"}
-    ]
-}
-```
-
-**Response:** Server-Sent Events stream
-```
-data: {"chunk": "I'm"}
-data: {"chunk": " doing"}
-data: {"chunk": " great!"}
-data: [DONE]
-```
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| `Enter` | Send message |
-| `Shift + Enter` | New line |
-| `Ctrl + N` | New conversation |
+| `/` | GET | Serves the main workstation UI |
+| `/api/config` | GET | Returns active model configuration |
+| `/api/chat` | POST | SSE chat inference stream |
+| `/api/fs/list` | POST | Directory tree filesystem lister |
+| `/api/model/switch` | POST | Switches model path with custom overrides |
+| `/api/models/download` | POST | Triggers HF optimum-cli export background task |
+| `/api/models/download/status` | GET | Fetches all model export tasks |
+| `/api/notes/list` | GET | Lists files inside the note directory |
 
 ---
 
 ## 🗂️ Project Structure
 
 ```
-ai-chat-interface/
-├── .env                  # Your configuration
-├── .env.example          # Configuration template
-├── app.py                # Flask server & API endpoints
-├── model_engine.py       # OpenVINO model wrapper
+local-ai-workstation/
+├── .env                  # Configuration details
+├── app.py                # API routing & background workers
+├── model_engine.py       # OpenVINO graph loading & session control
+├── system_stats.py       # Host resources telemetry
 ├── requirements.txt      # Python dependencies
-├── README.md             # This file
 └── static/
-    ├── index.html        # Chat UI (single page)
-    ├── css/
-    │   └── style.css     # Dark theme styles
-    └── js/
-        └── app.js        # Frontend application logic
+    ├── index.html        # Glassmorphic client app
+    ├── css/style.css     # CSS variable tokens & UI themes
+    └── js/app.js         # AJAX request logic & DOM state
 ```
-
----
-
-## 🛠️ Troubleshooting
-
-### Model fails to load
-- Verify `MODEL_PATH` in `.env` points to a valid OpenVINO model directory
-- Ensure the model directory contains `openvino_model.xml` and `openvino_model.bin`
-- Try setting `DEVICE=CPU` if GPU drivers aren't configured
-
-### Server starts but shows "Loading model..."
-- Large models take time to compile for GPU. Wait 30–60 seconds.
-- Check the terminal for loading progress.
-
-### "Disconnected" status in the UI
-- Ensure the Flask server is running
-- Check that you're connecting to the correct host/port
 
 ---
 
 ## 📄 License
 
 MIT — Use freely for personal and commercial projects.
+
