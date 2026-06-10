@@ -72,6 +72,7 @@ class ModelEngine:
         use_cache_env = os.getenv("USE_CACHE", "True").lower() in ("true", "1", "yes")
         self._use_cache = use_cache_env
         self.model_file = os.getenv("MODEL_FILE_NAME", "").strip() or None
+        self.base_model = os.getenv("BASE_MODEL", "").strip() or None
 
         # Tokenizer options
         self.trust_remote_code = os.getenv("TRUST_REMOTE_CODE", "True").lower() in ("true", "1", "yes")
@@ -100,6 +101,18 @@ class ModelEngine:
     @property
     def model_name(self):
         """Returns a human-readable model name derived from the path."""
+        has_xml = False
+        if os.path.isdir(self.model_path):
+            try:
+                has_xml = any(
+                    f.endswith(".xml") 
+                    for f in os.listdir(self.model_path) 
+                    if os.path.isfile(os.path.join(self.model_path, f))
+                )
+            except Exception:
+                pass
+        if not has_xml and self.base_model:
+            return f"{os.path.basename(self.base_model.rstrip('/'))} (Cached)"
         return os.path.basename(self.model_path.rstrip("/"))
 
     def load(self):
@@ -109,28 +122,70 @@ class ModelEngine:
 
         self._last_load_warnings = []  # Reset warnings for this load attempt
 
+        # Check if the folder has a proper .xml file
+        has_xml = False
+        if os.path.isdir(self.model_path):
+            try:
+                has_xml = any(
+                    f.endswith(".xml") 
+                    for f in os.listdir(self.model_path) 
+                    if os.path.isfile(os.path.join(self.model_path, f))
+                )
+            except Exception:
+                pass
+
+        # Determine actual model load path and cache directory config
+        if not has_xml:
+            # Fall back to method in user's pasted code:
+            # load base model and set the selected folder as the cache directory.
+            if self.base_model:
+                load_path = self.base_model
+                # Set the cache directory to the selected folder path
+                self.ov_config["CACHE_DIR"] = self.model_path
+                print(f"[ModelEngine] No XML file in model_path. Falling back to base_model='{load_path}' with CACHE_DIR='{self.model_path}'")
+            else:
+                # If no base model is provided, check if config.json exists to load from folder itself
+                if os.path.isdir(self.model_path) and os.path.isfile(os.path.join(self.model_path, "config.json")):
+                    load_path = self.model_path
+                    print(f"[ModelEngine] No XML file in model_path, but config.json found. Loading from folder itself: '{load_path}'")
+                else:
+                    raise FileNotFoundError(
+                        f"No model XML files or config.json found in '{self.model_path}'. "
+                        f"If this is a compilation cache folder (like 'ov_cache_3b'), please specify the "
+                        f"Base Model ID/path (e.g. 'OpenVINO/Qwen2.5-Coder-3B-Instruct-int8-ov') in the GUI settings."
+                    )
+        else:
+            load_path = self.model_path
+            print(f"[ModelEngine] XML file found in '{self.model_path}'. Loading model directly from path.")
+
         # Check if the path is explicitly intended to be a local path
         # but the directory does not exist. This avoids confusing Hugging Face Hub
         # validation errors when a local path is incorrect.
         is_local = (
-            self.model_path.startswith(".") or
-            self.model_path.startswith("/") or
-            self.model_path.startswith("~") or
-            "\\" in self.model_path or
-            ".." in self.model_path or
-            os.path.isdir(self.model_path)
+            load_path.startswith(".") or
+            load_path.startswith("/") or
+            load_path.startswith("~") or
+            "\\" in load_path or
+            ".." in load_path or
+            os.path.isdir(load_path)
         )
         if is_local:
-            if not os.path.isdir(self.model_path):
+            if not os.path.isdir(load_path):
                 raise FileNotFoundError(
-                    f"Local model directory does not exist: '{self.model_path}'. "
+                    f"Local model directory does not exist: '{load_path}'. "
                     f"Please check your path configuration."
                 )
-            if not os.path.isfile(os.path.join(self.model_path, "config.json")):
+            # Must contain a config.json or an .xml file to be valid.
+            has_local_xml = any(
+                f.endswith(".xml") 
+                for f in os.listdir(load_path) 
+                if os.path.isfile(os.path.join(load_path, f))
+            )
+            has_config = os.path.isfile(os.path.join(load_path, "config.json"))
+            if not has_local_xml and not has_config:
                 raise FileNotFoundError(
-                    f"Invalid model directory: '{self.model_path}'. "
-                    f"A valid Hugging Face / Optimum model directory must contain a 'config.json' file. "
-                    f"Please verify that this is a model directory and not a cache directory (like 'ov_cache_3b')."
+                    f"Invalid model directory: '{load_path}'. "
+                    f"A valid Hugging Face / Optimum model directory must contain a 'config.json' file or an '.xml' file."
                 )
 
         # Import here so the app can start even if openvino isn't installed
@@ -142,7 +197,7 @@ class ModelEngine:
         if self.tokenizer is None:
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_path,
+                    load_path,
                     trust_remote_code=self.trust_remote_code,
                     fix_mistral_regex=self.fix_mistral_regex
                 )
@@ -150,7 +205,7 @@ class ModelEngine:
                 if "fix_mistral_regex" in str(e):
                     print("[ModelEngine] fix_mistral_regex parameter not supported by AutoTokenizer. Retrying without it...")
                     self.tokenizer = AutoTokenizer.from_pretrained(
-                        self.model_path,
+                        load_path,
                         trust_remote_code=self.trust_remote_code
                     )
                 else:
@@ -161,7 +216,7 @@ class ModelEngine:
 
         for device in device_order:
             try:
-                print(f"[ModelEngine] Loading {self.model_path} onto {device} with use_cache={self._use_cache} and ov_config={self.ov_config}...")
+                print(f"[ModelEngine] Loading {load_path} onto {device} with use_cache={self._use_cache} and ov_config={self.ov_config}...")
                 model_kwargs = {
                     "device": device,
                     "compile": True,
@@ -173,7 +228,7 @@ class ModelEngine:
                     model_kwargs["file_name"] = self.model_file
 
                 self.model = OVModelForCausalLM.from_pretrained(
-                    self.model_path, **model_kwargs
+                    load_path, **model_kwargs
                 )
                 self._active_device = device
                 self._loaded = True
@@ -202,7 +257,7 @@ class ModelEngine:
                             retry_kwargs["file_name"] = self.model_file
 
                         self.model = OVModelForCausalLM.from_pretrained(
-                            self.model_path, **retry_kwargs
+                            load_path, **retry_kwargs
                         )
                         self._active_device = device
                         self._loaded = True
@@ -257,6 +312,7 @@ class ModelEngine:
         ov_config: dict = None,
         ov_performance_hint: str = None,
         ov_cache_dir: str = None,
+        base_model: str = None,
     ) -> dict:
         """
         Switch to a different model at runtime.
@@ -273,6 +329,7 @@ class ModelEngine:
             ov_config: Optional full custom OpenVINO configuration mapping.
             ov_performance_hint: Optional OpenVINO performance hint override.
             ov_cache_dir: Optional OpenVINO compiler cache directory override.
+            base_model: Optional Hugging Face Hub / local path source model.
 
         Returns:
             Dict with keys: success, model_name, model_path, message, warnings.
@@ -297,6 +354,7 @@ class ModelEngine:
             }
 
         previous_path = self.model_path
+        previous_base_model = self.base_model
         previous_loaded = self._loaded
         previous_use_cache = self._use_cache
         previous_model_file = self.model_file
@@ -312,6 +370,11 @@ class ModelEngine:
                 self.tokenizer = None  # Force tokenizer reload
                 
                 # Apply new options if specified, otherwise fall back to environment defaults
+                if base_model is not None:
+                    self.base_model = base_model.strip() or None
+                else:
+                    self.base_model = os.getenv("BASE_MODEL", "").strip() or None
+
                 if use_cache is not None:
                     self._use_cache = use_cache
                 else:
@@ -370,6 +433,7 @@ class ModelEngine:
                     print(f"[ModelEngine] Failed to load new model from {new_model_path}: {e}")
                     # Try to roll back to the previous path and configuration
                     self.model_path = previous_path
+                    self.base_model = previous_base_model
                     self.tokenizer = None
                     self._use_cache = previous_use_cache
                     self.model_file = previous_model_file
@@ -550,6 +614,7 @@ class ModelEngine:
         return {
             "model_name": self.model_name,
             "model_path": self.model_path,
+            "base_model": self.base_model,
             "device": active,
             "device_friendly": self._get_friendly_device_name(active),
             "requested_device": self._requested_device,
