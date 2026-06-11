@@ -276,6 +276,22 @@
 
             <!-- Input area -->
             <div class="input-area">
+                <!-- Model Switcher Bar -->
+                <div class="model-switcher-bar" id="model-switcher-bar">
+                    <div class="model-switcher-container">
+                        <button class="model-switcher-btn" id="model-switcher-btn" title="Switch between loaded models">
+                            <span class="model-switcher-icon">🧠</span>
+                            <span class="model-switcher-label" id="model-switcher-label">No model loaded</span>
+                            <span class="model-switcher-chevron">▾</span>
+                        </button>
+                        <div class="model-switcher-dropdown" id="model-switcher-dropdown">
+                            <div class="model-switcher-dropdown-header">Loaded Models</div>
+                            <div class="model-switcher-dropdown-list" id="model-switcher-dropdown-list">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="input-container">
                     <div class="input-wrapper">
                         <textarea id="chat-input" placeholder="Type a message..." rows="1" autofocus></textarea>

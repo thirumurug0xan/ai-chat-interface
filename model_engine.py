@@ -72,7 +72,6 @@ class ModelEngine:
         use_cache_env = os.getenv("USE_CACHE", "True").lower() in ("true", "1", "yes")
         self._use_cache = use_cache_env
         self.model_file = os.getenv("MODEL_FILE_NAME", "").strip() or None
-        self.base_model = os.getenv("BASE_MODEL", "").strip() or None
 
         # Tokenizer options
         self.trust_remote_code = os.getenv("TRUST_REMOTE_CODE", "True").lower() in ("true", "1", "yes")
@@ -88,31 +87,16 @@ class ModelEngine:
             except Exception as e:
                 print(f"[ModelEngine] Warning: Failed to parse OV_CONFIG JSON: {e}")
         else:
-            # Fall back to default structure: PERFORMANCE_HINT and CACHE_DIR
+            # Fall back to default structure: PERFORMANCE_HINT
             perf_hint = os.getenv("OV_PERFORMANCE_HINT", "LATENCY").strip()
-            cache_dir = os.getenv("OV_CACHE_DIR", "./ov_cache").strip()
             if perf_hint:
                 self.ov_config["PERFORMANCE_HINT"] = perf_hint
-            if cache_dir:
-                self.ov_config["CACHE_DIR"] = os.path.expanduser(cache_dir)
 
         self._last_load_warnings = []   # Warnings from the last load operation
 
     @property
     def model_name(self):
         """Returns a human-readable model name derived from the path."""
-        has_xml = False
-        if os.path.isdir(self.model_path):
-            try:
-                has_xml = any(
-                    f.endswith(".xml") 
-                    for f in os.listdir(self.model_path) 
-                    if os.path.isfile(os.path.join(self.model_path, f))
-                )
-            except Exception:
-                pass
-        if not has_xml and self.base_model:
-            return f"{os.path.basename(self.base_model.rstrip('/'))} (Cached)"
         return os.path.basename(self.model_path.rstrip("/"))
 
     def load(self):
@@ -122,41 +106,7 @@ class ModelEngine:
 
         self._last_load_warnings = []  # Reset warnings for this load attempt
 
-        # Check if the folder has a proper .xml file
-        has_xml = False
-        if os.path.isdir(self.model_path):
-            try:
-                has_xml = any(
-                    f.endswith(".xml") 
-                    for f in os.listdir(self.model_path) 
-                    if os.path.isfile(os.path.join(self.model_path, f))
-                )
-            except Exception:
-                pass
-
-        # Determine actual model load path and cache directory config
-        if not has_xml:
-            # Fall back to method in user's pasted code:
-            # load base model and set the selected folder as the cache directory.
-            if self.base_model:
-                load_path = self.base_model
-                # Set the cache directory to the selected folder path
-                self.ov_config["CACHE_DIR"] = self.model_path
-                print(f"[ModelEngine] No XML file in model_path. Falling back to base_model='{load_path}' with CACHE_DIR='{self.model_path}'")
-            else:
-                # If no base model is provided, check if config.json exists to load from folder itself
-                if os.path.isdir(self.model_path) and os.path.isfile(os.path.join(self.model_path, "config.json")):
-                    load_path = self.model_path
-                    print(f"[ModelEngine] No XML file in model_path, but config.json found. Loading from folder itself: '{load_path}'")
-                else:
-                    raise FileNotFoundError(
-                        f"No model XML files or config.json found in '{self.model_path}'. "
-                        f"If this is a compilation cache folder (like 'ov_cache_3b'), please specify the "
-                        f"Base Model ID/path (e.g. 'OpenVINO/Qwen2.5-Coder-3B-Instruct-int8-ov') in the GUI settings."
-                    )
-        else:
-            load_path = self.model_path
-            print(f"[ModelEngine] XML file found in '{self.model_path}'. Loading model directly from path.")
+        load_path = self.model_path
 
         # Check if the path is explicitly intended to be a local path
         # but the directory does not exist. This avoids confusing Hugging Face Hub
@@ -312,7 +262,6 @@ class ModelEngine:
         ov_config: dict = None,
         ov_performance_hint: str = None,
         ov_cache_dir: str = None,
-        base_model: str = None,
     ) -> dict:
         """
         Switch to a different model at runtime.
@@ -329,7 +278,6 @@ class ModelEngine:
             ov_config: Optional full custom OpenVINO configuration mapping.
             ov_performance_hint: Optional OpenVINO performance hint override.
             ov_cache_dir: Optional OpenVINO compiler cache directory override.
-            base_model: Optional Hugging Face Hub / local path source model.
 
         Returns:
             Dict with keys: success, model_name, model_path, message, warnings.
@@ -354,7 +302,6 @@ class ModelEngine:
             }
 
         previous_path = self.model_path
-        previous_base_model = self.base_model
         previous_loaded = self._loaded
         previous_use_cache = self._use_cache
         previous_model_file = self.model_file
@@ -370,10 +317,6 @@ class ModelEngine:
                 self.tokenizer = None  # Force tokenizer reload
                 
                 # Apply new options if specified, otherwise fall back to environment defaults
-                if base_model is not None:
-                    self.base_model = base_model.strip() or None
-                else:
-                    self.base_model = os.getenv("BASE_MODEL", "").strip() or None
 
                 if use_cache is not None:
                     self._use_cache = use_cache
@@ -397,12 +340,10 @@ class ModelEngine:
 
                 if ov_config is not None:
                     self.ov_config = ov_config
-                elif ov_performance_hint is not None or ov_cache_dir is not None:
+                elif ov_performance_hint is not None:
                     self.ov_config = {}
                     if ov_performance_hint:
                         self.ov_config["PERFORMANCE_HINT"] = ov_performance_hint
-                    if ov_cache_dir:
-                        self.ov_config["CACHE_DIR"] = os.path.expanduser(ov_cache_dir)
                 else:
                     self.ov_config = {}
                     ov_config_str = os.getenv("OV_CONFIG", "").strip()
@@ -414,11 +355,8 @@ class ModelEngine:
                             print(f"[ModelEngine] Warning: Failed to parse OV_CONFIG JSON: {e}")
                     else:
                         perf_hint = os.getenv("OV_PERFORMANCE_HINT", "LATENCY").strip()
-                        cache_dir = os.getenv("OV_CACHE_DIR", "./ov_cache").strip()
                         if perf_hint:
                             self.ov_config["PERFORMANCE_HINT"] = perf_hint
-                        if cache_dir:
-                            self.ov_config["CACHE_DIR"] = os.path.expanduser(cache_dir)
                 
                 try:
                     self.load()
@@ -433,7 +371,6 @@ class ModelEngine:
                     print(f"[ModelEngine] Failed to load new model from {new_model_path}: {e}")
                     # Try to roll back to the previous path and configuration
                     self.model_path = previous_path
-                    self.base_model = previous_base_model
                     self.tokenizer = None
                     self._use_cache = previous_use_cache
                     self.model_file = previous_model_file
@@ -614,7 +551,6 @@ class ModelEngine:
         return {
             "model_name": self.model_name,
             "model_path": self.model_path,
-            "base_model": self.base_model,
             "device": active,
             "device_friendly": self._get_friendly_device_name(active),
             "requested_device": self._requested_device,
@@ -846,3 +782,247 @@ class ModelEngine:
 
         # Encourage garbage collection after generation to free GPU memory
         gc.collect()
+
+
+class MultiModelManager:
+    """Manages multiple loaded ModelEngine instances and provides active model switching."""
+
+    def __init__(self):
+        self._engines = {}  # model_path -> ModelEngine
+        self._active_path = None  # path of the currently active model
+        self._mgr_lock = threading.Lock()
+
+    @property
+    def active_engine(self) -> ModelEngine:
+        """Get the currently active ModelEngine, or None."""
+        if self._active_path and self._active_path in self._engines:
+            return self._engines[self._active_path]
+        return None
+
+    def get_loaded_models(self) -> list[dict]:
+        """Return info about all loaded models."""
+        models = []
+        for path, eng in self._engines.items():
+            models.append({
+                "model_name": eng.model_name,
+                "model_path": eng.model_path,
+                "is_active": (path == self._active_path),
+                "device": eng._active_device or eng.device,
+                "device_friendly": eng._get_friendly_device_name(eng._active_device or eng.device),
+                "loaded": eng.is_loaded(),
+            })
+        return models
+
+    def load_model(self, model_path: str, device: str = None, make_active: bool = True, **kwargs) -> dict:
+        """Load a new model and optionally make it active.
+
+        If the model is already loaded, just activate it.
+        kwargs are passed to ModelEngine configuration (use_cache, model_file, etc.)
+        """
+        model_path = os.path.abspath(model_path.strip())
+
+        # If already loaded, just activate
+        if model_path in self._engines and self._engines[model_path].is_loaded():
+            if make_active:
+                self._active_path = model_path
+            eng = self._engines[model_path]
+            return {
+                "success": True,
+                "model_name": eng.model_name,
+                "model_path": model_path,
+                "message": f"Model already loaded: {eng.model_name}. Activated.",
+                "warnings": [],
+                "loaded_models": self.get_loaded_models(),
+            }
+
+        if not os.path.isdir(model_path):
+            return {
+                "success": False,
+                "model_name": "",
+                "model_path": model_path,
+                "message": f"Model directory does not exist: {model_path}",
+                "warnings": [],
+                "loaded_models": self.get_loaded_models(),
+            }
+
+        # Create a new engine
+        eng = ModelEngine()
+        eng.model_path = model_path
+        if device:
+            eng.device = device
+            eng._requested_device = device
+
+        # Apply optional kwargs
+        if 'use_cache' in kwargs and kwargs['use_cache'] is not None:
+            eng._use_cache = kwargs['use_cache']
+        if 'model_file' in kwargs and kwargs['model_file'] is not None:
+            eng.model_file = kwargs['model_file'] or None
+        if 'trust_remote_code' in kwargs and kwargs['trust_remote_code'] is not None:
+            eng.trust_remote_code = kwargs['trust_remote_code']
+        if 'fix_mistral_regex' in kwargs and kwargs['fix_mistral_regex'] is not None:
+            eng.fix_mistral_regex = kwargs['fix_mistral_regex']
+        if 'ov_performance_hint' in kwargs and kwargs['ov_performance_hint']:
+            eng.ov_config["PERFORMANCE_HINT"] = kwargs['ov_performance_hint']
+
+        try:
+            eng.load()
+            self._engines[model_path] = eng
+            if make_active:
+                self._active_path = model_path
+            return {
+                "success": True,
+                "model_name": eng.model_name,
+                "model_path": model_path,
+                "message": f"Successfully loaded model: {eng.model_name}",
+                "warnings": list(eng._last_load_warnings),
+                "loaded_models": self.get_loaded_models(),
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "model_name": "",
+                "model_path": model_path,
+                "message": f"Failed to load model: {str(e)}",
+                "warnings": [],
+                "loaded_models": self.get_loaded_models(),
+            }
+
+    def activate_model(self, model_path: str) -> dict:
+        """Switch the active model to an already-loaded model."""
+        model_path = os.path.abspath(model_path.strip())
+        if model_path not in self._engines:
+            return {
+                "success": False,
+                "message": f"Model not loaded: {model_path}",
+                "loaded_models": self.get_loaded_models(),
+            }
+        eng = self._engines[model_path]
+        if not eng.is_loaded():
+            return {
+                "success": False,
+                "message": f"Model is not in loaded state: {eng.model_name}",
+                "loaded_models": self.get_loaded_models(),
+            }
+        self._active_path = model_path
+        return {
+            "success": True,
+            "model_name": eng.model_name,
+            "model_path": model_path,
+            "message": f"Switched to: {eng.model_name}",
+            "loaded_models": self.get_loaded_models(),
+        }
+
+    def unload_model(self, model_path: str) -> dict:
+        """Unload a specific model and free its resources."""
+        model_path = os.path.abspath(model_path.strip())
+        if model_path not in self._engines:
+            return {
+                "success": False,
+                "message": f"Model not found: {model_path}",
+                "loaded_models": self.get_loaded_models(),
+            }
+
+        eng = self._engines.pop(model_path)
+        eng._unload()
+
+        # If we unloaded the active model, pick another if available
+        if self._active_path == model_path:
+            if self._engines:
+                self._active_path = next(iter(self._engines))
+            else:
+                self._active_path = None
+
+        return {
+            "success": True,
+            "message": f"Unloaded model: {eng.model_name}",
+            "loaded_models": self.get_loaded_models(),
+        }
+
+    # Delegate common operations to the active engine
+    def is_loaded(self):
+        eng = self.active_engine
+        return eng.is_loaded() if eng else False
+
+    def get_config(self):
+        eng = self.active_engine
+        if eng:
+            config = eng.get_config()
+            config["loaded_models"] = self.get_loaded_models()
+            return config
+        return {
+            "model_name": "No model loaded",
+            "model_path": "",
+            "device": "—",
+            "device_friendly": "—",
+            "loaded": False,
+            "loaded_models": [],
+        }
+
+    @property
+    def model_name(self):
+        eng = self.active_engine
+        return eng.model_name if eng else "No model loaded"
+
+    @property
+    def model_path(self):
+        eng = self.active_engine
+        return eng.model_path if eng else ""
+
+    @property
+    def _active_device(self):
+        eng = self.active_engine
+        return eng._active_device if eng else None
+
+    @property
+    def _lock(self):
+        eng = self.active_engine
+        return eng._lock if eng else self._mgr_lock
+
+    @property
+    def _switching(self):
+        eng = self.active_engine
+        return eng._switching if eng else False
+
+    def count_tokens(self, history):
+        eng = self.active_engine
+        return eng.count_tokens(history) if eng else 0
+
+    def generate(self, history):
+        eng = self.active_engine
+        if not eng:
+            raise RuntimeError("No model is loaded.")
+        return eng.generate(history)
+
+    def generate_stream(self, history, max_new_tokens=None):
+        eng = self.active_engine
+        if not eng:
+            raise RuntimeError("No model is loaded.")
+        return eng.generate_stream(history, max_new_tokens=max_new_tokens)
+
+    def switch_device(self, new_device):
+        eng = self.active_engine
+        if not eng:
+            return {"success": False, "message": "No model loaded"}
+        return eng.switch_device(new_device)
+
+    @property
+    def max_new_tokens(self):
+        eng = self.active_engine
+        return eng.max_new_tokens if eng else 512
+
+    @max_new_tokens.setter
+    def max_new_tokens(self, val):
+        eng = self.active_engine
+        if eng:
+            eng.max_new_tokens = val
+
+    @property
+    def max_input_tokens(self):
+        eng = self.active_engine
+        return eng.max_input_tokens if eng else 1024
+
+    @max_input_tokens.setter
+    def max_input_tokens(self, val):
+        eng = self.active_engine
+        if eng:
+            eng.max_input_tokens = val
