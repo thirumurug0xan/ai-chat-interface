@@ -201,7 +201,7 @@ def config_update():
     if "max_new_tokens" in data:
         try:
             val = int(data["max_new_tokens"])
-            if 64 <= val <= 4096:
+            if 64 <= val <= 8192:
                 engine.max_new_tokens = val
         except ValueError:
             pass
@@ -209,7 +209,7 @@ def config_update():
     if "max_input_tokens" in data:
         try:
             val = int(data["max_input_tokens"])
-            if 256 <= val <= 4096:
+            if 256 <= val <= 128000:
                 engine.max_input_tokens = val
         except ValueError:
             pass

@@ -9,6 +9,18 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <!-- Marked for Markdown Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Prism.js for Code Highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-css.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-markup.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
 </head>
 
 <body>
@@ -414,7 +426,7 @@
                         <div class="setting-description">Maximum number of tokens the model generates per response.
                         </div>
                         <input type="range" id="setting-max-new-tokens" class="setting-slider-modern" min="64"
-                            max="4096" step="64" value="2048">
+                            max="8192" step="64" value="2048">
                     </div>
 
                     <div class="setting-item">
@@ -426,7 +438,16 @@
                         <div class="setting-description">Limits history size to prevent GPU out-of-memory errors. Old
                             messages are trimmed when this limit is reached.</div>
                         <input type="range" id="setting-max-input-tokens" class="setting-slider-modern" min="256"
-                            max="4096" step="128" value="1024">
+                            max="128000" step="256" value="1024">
+                        <div class="context-presets">
+                            <button class="preset-btn" type="button" data-value="1024">1K</button>
+                            <button class="preset-btn" type="button" data-value="4096">4K</button>
+                            <button class="preset-btn" type="button" data-value="8192">8K</button>
+                            <button class="preset-btn" type="button" data-value="16384">16K</button>
+                            <button class="preset-btn" type="button" data-value="32768">32K</button>
+                            <button class="preset-btn" type="button" data-value="65536">64K</button>
+                            <button class="preset-btn" type="button" data-value="128000">128K</button>
+                        </div>
                     </div>
                 </div>
             </div>
