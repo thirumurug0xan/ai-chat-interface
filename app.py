@@ -17,7 +17,7 @@ import shutil
 import subprocess
 from flask import Flask, request, Response, jsonify, send_from_directory
 from dotenv import load_dotenv
-from model_engine import ModelEngine
+from model_engine import MultiModelManager
 from system_stats import get_system_stats
 
 load_dotenv()
@@ -25,7 +25,7 @@ load_dotenv()
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 # ── Initialize the model engine ──────────────────────────────────────────────
-engine = ModelEngine()
+engine = MultiModelManager()
 
 # Global dictionary to track Hugging Face model export and download processes
 active_downloads = {}
@@ -439,18 +439,14 @@ def model_switch():
         trust_remote_code = data.get("trust_remote_code")
         fix_mistral_regex = data.get("fix_mistral_regex")
         ov_performance_hint = data.get("ov_performance_hint")
-        ov_cache_dir = data.get("ov_cache_dir")
-        base_model = data.get("base_model")
 
-        result = engine.switch_model(
+        result = engine.load_model(
             requested_path,
             use_cache=use_cache,
             model_file=model_file,
             trust_remote_code=trust_remote_code,
             fix_mistral_regex=fix_mistral_regex,
             ov_performance_hint=ov_performance_hint,
-            ov_cache_dir=ov_cache_dir,
-            base_model=base_model
         )
         return jsonify(result)
     except Exception as e:
@@ -461,6 +457,30 @@ def model_switch():
             "model_path": engine.model_path,
             "message": f"Model switch failed: {str(e)}",
         }), 500
+
+
+@app.route("/api/models/loaded", methods=["GET"])
+def models_loaded():
+    """Return list of all currently loaded models."""
+    return jsonify(engine.get_loaded_models())
+
+@app.route("/api/models/activate", methods=["POST"])
+def models_activate():
+    """Switch the active model to an already-loaded one."""
+    data = request.get_json()
+    if not data or "model_path" not in data:
+        return jsonify({"error": "Missing 'model_path'"}), 400
+    result = engine.activate_model(data["model_path"])
+    return jsonify(result)
+
+@app.route("/api/models/unload", methods=["POST"])
+def models_unload():
+    """Unload a specific model."""
+    data = request.get_json()
+    if not data or "model_path" not in data:
+        return jsonify({"error": "Missing 'model_path'"}), 400
+    result = engine.unload_model(data["model_path"])
+    return jsonify(result)
 
 
 # ── Model Downloader Endpoints ───────────────────────────────────────────────
@@ -905,9 +925,15 @@ def notes_set_directory():
 # ── Startup ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Load model at startup
+    # Load initial model at startup
+    model_path = os.getenv("MODEL_PATH", "./qwen-0.5b-ov")
+    model_path = os.path.expanduser(model_path.strip()) if model_path else "./qwen-0.5b-ov"
     try:
-        engine.load()
+        result = engine.load_model(model_path)
+        if not result["success"]:
+            print(f"[WARNING] Failed to load model: {result['message']}")
+            print("[WARNING] The server will start, but /api/chat will return 503.")
+            print("[WARNING] Fix the model path/device in .env and restart.")
     except Exception as e:
         print(f"[WARNING] Failed to load model: {e}")
         print("[WARNING] The server will start, but /api/chat will return 503.")

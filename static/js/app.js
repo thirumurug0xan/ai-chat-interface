@@ -237,6 +237,12 @@ const dom = {
     chkMenuLinenumbers: $("#chk-menu-linenumbers"),
     chkMenuWordwrap: $("#chk-menu-wordwrap"),
     chkMenuHighlight: $("#chk-menu-highlight"),
+    // Model Switcher
+    modelSwitcherBar: $("#model-switcher-bar"),
+    modelSwitcherBtn: $("#model-switcher-btn"),
+    modelSwitcherLabel: $("#model-switcher-label"),
+    modelSwitcherDropdown: $("#model-switcher-dropdown"),
+    modelSwitcherDropdownList: $("#model-switcher-dropdown-list"),
 };
 
 // ── Window Stacking Management ───────────────────────────────────────────────
@@ -879,6 +885,22 @@ function initEventListeners() {
             bringToFront(overlay);
         });
     });
+
+    // Model Switcher
+    if (dom.modelSwitcherBtn) {
+        dom.modelSwitcherBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleModelSwitcher();
+        });
+    }
+    // Close model switcher on outside click
+    document.addEventListener("click", (e) => {
+        if (dom.modelSwitcherDropdown && dom.modelSwitcherDropdown.classList.contains("open")) {
+            if (!e.target.closest(".model-switcher-container")) {
+                closeModelSwitcher();
+            }
+        }
+    });
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -926,6 +948,9 @@ async function fetchConfig() {
             }
             updateContextWindowUI(0, data.max_input_tokens);
         }
+
+        // Update model switcher label
+        updateModelSwitcherLabel();
     } catch (err) {
         setStatus("error", "Disconnected");
         dom.modelStatus.textContent = "Error";
@@ -2564,15 +2589,10 @@ async function renderDetailsPane(entry) {
             const hasConfig = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "config.json");
             const xmlFiles = filesList.filter(f => !f.is_dir && f.name.endsWith(".xml"));
             const hasXmlModel = filesList.some(f => !f.is_dir && f.name.toLowerCase() === "openvino_model.xml");
-            const hasCacheFiles = filesList.some(f => !f.is_dir && (f.name.endsWith(".cl_cache") || f.name.endsWith(".blob") || f.name.toLowerCase().includes("onednn")));
-            const isValidModel = (hasConfig && (xmlFiles.length > 0 || hasXmlModel)) || hasCacheFiles;
+            const isValidModel = hasConfig && (xmlFiles.length > 0 || hasXmlModel);
 
             if (isValidModel) {
-                if (hasCacheFiles && !hasXmlModel) {
-                    badgeHtml = `<div class="fs-model-badge valid" style="background: rgba(0, 184, 148, 0.15); color: #00b894;">💾 OpenVINO Cache Folder</div>`;
-                } else {
-                    badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
-                }
+                badgeHtml = `<div class="fs-model-badge valid">🧠 OpenVINO Model Folder</div>`;
                 if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
             } else {
                 badgeHtml = `<div class="fs-model-badge invalid">⚠️ Regular Folder</div>`;
@@ -2580,14 +2600,12 @@ async function renderDetailsPane(entry) {
             }
 
             let warningText = "";
-            if (hasCacheFiles && !hasXmlModel) {
-                warningText = "Detected OpenVINO compilation cache files. To load this cache, please specify the Base Model ID/path in the settings below.";
-            } else if (!hasConfig && (xmlFiles.length > 0 || hasXmlModel)) {
+            if (!hasConfig && (xmlFiles.length > 0 || hasXmlModel)) {
                 warningText = "No config.json detected (found XML files). This could be loaded directly as a compiled OpenVINO IR model.";
             } else if (!hasConfig) {
-                warningText = "No config.json or model XML files detected. If you want to load this as a cache folder or local path, specify the Base Model ID/path below.";
+                warningText = "No config.json or model XML files detected.";
             } else {
-                warningText = "No model XML files detected in this folder. The model must be exported to OpenVINO format (containing .xml/.bin files) before loading, or you can specify the Base Model ID below.";
+                warningText = "No model XML files detected in this folder. The model must be exported to OpenVINO format (containing .xml/.bin files) before loading.";
             }
 
             warningHtml = `
@@ -2603,17 +2621,10 @@ async function renderDetailsPane(entry) {
                 }
             });
 
-            const currentBaseModel = state.modelConfig?.base_model || "";
-            const currentCacheDir = state.modelConfig?.ov_config?.CACHE_DIR || (hasCacheFiles ? entry.path : "./ov_cache");
             const configFormHtml = `
                 <div class="model-config-form" style="margin-top: 15px; padding: 12px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); border-radius: 8px;">
                     <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px; color: var(--text-primary); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; display: flex; align-items: center; gap: 5px;">
                         <span>⚙️</span> OpenVINO Settings
-                    </div>
-                    
-                    <div style="margin-bottom: 8px;">
-                        <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Base Model ID / Path</label>
-                        <input type="text" id="model-config-base" value="${escapeHtml(currentBaseModel)}" placeholder="e.g. OpenVINO/Qwen2.5-Coder-3B-Instruct-int8-ov" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; box-sizing: border-box; outline: none;">
                     </div>
 
                     <div style="margin-bottom: 8px;">
@@ -2626,10 +2637,6 @@ async function renderDetailsPane(entry) {
                         </select>
                     </div>
                     
-                    <div style="margin-bottom: 8px;">
-                        <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Cache Directory</label>
-                        <input type="text" id="model-config-cache" value="${escapeHtml(currentCacheDir)}" placeholder="e.g. ./ov_cache" style="width: 100%; padding: 5px; background: var(--bg-secondary, #1e1e1e); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 4px; font-size: 11.5px; box-sizing: border-box; outline: none;">
-                    </div>
                     
                     <div style="margin-bottom: 8px;">
                         <label style="display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">Model XML File</label>
@@ -2739,21 +2746,17 @@ async function loadModelFromPath() {
 
     // Retrieve form settings from DOM
     const perfHintEl = document.getElementById("model-config-perf");
-    const cacheDirEl = document.getElementById("model-config-cache");
     const modelFileEl = document.getElementById("model-config-file");
     const useCacheEl = document.getElementById("model-config-use-cache");
     const trustRemoteEl = document.getElementById("model-config-trust-remote");
     const fixRegexEl = document.getElementById("model-config-fix-regex");
-    const baseModelEl = document.getElementById("model-config-base");
 
     const payload = { model_path: targetModelPath };
     if (perfHintEl) payload.ov_performance_hint = perfHintEl.value;
-    if (cacheDirEl) payload.ov_cache_dir = cacheDirEl.value.trim();
     if (modelFileEl) payload.model_file = modelFileEl.value;
     if (useCacheEl) payload.use_cache = useCacheEl.checked;
     if (trustRemoteEl) payload.trust_remote_code = trustRemoteEl.checked;
     if (fixRegexEl) payload.fix_mistral_regex = fixRegexEl.checked;
-    if (baseModelEl) payload.base_model = baseModelEl.value.trim();
 
     if (dom.modelSwitchingTitle) {
         dom.modelSwitchingTitle.textContent = `Loading OpenVINO Model...`;
@@ -2803,6 +2806,130 @@ async function loadModelFromPath() {
         }
         if (dom.btnFsConfirm) dom.btnFsConfirm.disabled = false;
         if (dom.btnFsCancel) dom.btnFsCancel.disabled = false;
+    }
+}
+
+// ── Model Switcher Functions ────────────────────────────────────────────────
+
+function toggleModelSwitcher() {
+    const dropdown = dom.modelSwitcherDropdown;
+    const btn = dom.modelSwitcherBtn;
+    if (!dropdown || !btn) return;
+    
+    if (dropdown.classList.contains("open")) {
+        closeModelSwitcher();
+    } else {
+        renderModelSwitcherDropdown();
+        dropdown.classList.add("open");
+        btn.classList.add("open");
+    }
+}
+
+function closeModelSwitcher() {
+    if (dom.modelSwitcherDropdown) dom.modelSwitcherDropdown.classList.remove("open");
+    if (dom.modelSwitcherBtn) dom.modelSwitcherBtn.classList.remove("open");
+}
+
+function renderModelSwitcherDropdown() {
+    const list = dom.modelSwitcherDropdownList;
+    if (!list) return;
+    
+    const models = state.modelConfig?.loaded_models || [];
+    
+    if (models.length === 0) {
+        list.innerHTML = '<div class="model-switcher-empty">No models loaded. Use the sidebar to load a model.</div>';
+        return;
+    }
+    
+    list.innerHTML = models.map(m => `
+        <div class="model-switcher-item ${m.is_active ? 'active' : ''}" data-path="${escapeHtml(m.model_path)}">
+            <div class="model-switcher-item-dot"></div>
+            <div class="model-switcher-item-info">
+                <div class="model-switcher-item-name">${escapeHtml(m.model_name)}</div>
+                <div class="model-switcher-item-detail">
+                    <span class="model-switcher-item-device">${escapeHtml(m.device_friendly || m.device)}</span>
+                    ${m.is_active ? '<span style="color: var(--accent-1); font-weight: 600;">Active</span>' : ''}
+                </div>
+            </div>
+            ${!m.is_active ? `<button class="model-switcher-item-unload" data-unload-path="${escapeHtml(m.model_path)}" title="Unload this model">✕</button>` : ''}
+        </div>
+    `).join('');
+    
+    // Add click handlers
+    list.querySelectorAll('.model-switcher-item').forEach(item => {
+        item.addEventListener('click', async (e) => {
+            // Don't activate if clicking unload button
+            if (e.target.closest('.model-switcher-item-unload')) return;
+            
+            const path = item.dataset.path;
+            if (!path) return;
+            
+            closeModelSwitcher();
+            await activateLoadedModel(path);
+        });
+    });
+    
+    list.querySelectorAll('.model-switcher-item-unload').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const path = btn.dataset.unloadPath;
+            if (!path) return;
+            await unloadModel(path);
+        });
+    });
+}
+
+async function activateLoadedModel(modelPath) {
+    try {
+        const res = await fetch("/api/models/activate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_path: modelPath })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || `Switched model`, "success");
+            await fetchConfig();
+        } else {
+            showToast(data.message || "Failed to switch model", "error");
+        }
+    } catch (err) {
+        showToast(`Failed to switch: ${err.message}`, "error");
+    }
+}
+
+async function unloadModel(modelPath) {
+    try {
+        const res = await fetch("/api/models/unload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_path: modelPath })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || "Model unloaded", "success");
+            await fetchConfig();
+        } else {
+            showToast(data.message || "Failed to unload", "error");
+        }
+    } catch (err) {
+        showToast(`Failed to unload: ${err.message}`, "error");
+    }
+}
+
+function updateModelSwitcherLabel() {
+    if (!dom.modelSwitcherLabel) return;
+    const models = state.modelConfig?.loaded_models || [];
+    const active = models.find(m => m.is_active);
+    if (active) {
+        dom.modelSwitcherLabel.textContent = active.model_name;
+    } else {
+        dom.modelSwitcherLabel.textContent = state.modelConfig?.model_name || "No model loaded";
+    }
+    
+    // Also update the count indicator
+    if (models.length > 1) {
+        dom.modelSwitcherLabel.textContent += ` (${models.length} loaded)`;
     }
 }
 
