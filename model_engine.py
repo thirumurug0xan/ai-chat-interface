@@ -1027,3 +1027,14 @@ class MultiModelManager:
         eng = self.active_engine
         if eng:
             eng.max_input_tokens = val
+
+    @property
+    def _requested_device(self):
+        eng = self.active_engine
+        return eng._requested_device if eng else "AUTO"
+
+    @_requested_device.setter
+    def _requested_device(self, val):
+        eng = self.active_engine
+        if eng:
+            eng._requested_device = val
