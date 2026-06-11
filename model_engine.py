@@ -579,8 +579,9 @@ class ModelEngine:
         Returns:
             Trimmed history that fits within the token budget.
         """
-        # Start with the configured max_history limit
-        trimmed = history[-self.max_history:]
+        # Start with the configured max_history limit, but scale it up if the context window is large
+        history_limit = max(self.max_history, 1000) if self.max_input_tokens > 4096 else self.max_history
+        trimmed = history[-history_limit:]
 
         while len(trimmed) > 0:
             text = self.tokenizer.apply_chat_template(

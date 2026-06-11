@@ -483,6 +483,7 @@ function initEventListeners() {
         dom.settingMaxInputTokens.addEventListener("input", (e) => {
             dom.settingMaxInputTokensVal.textContent = e.target.value;
         });
+        wireContextPresets();
     }
 
     // Settings save button
@@ -1098,7 +1099,10 @@ async function generateResponse(conv) {
                             firstChunk = false;
                         }
                         fullResponse += parsed.chunk;
-                        contentEl.innerHTML = renderMarkdown(fullResponse);
+                        contentEl.innerHTML = renderMarkdown(fullResponse) + '<span class="typing-cursor"></span>';
+                        if (typeof Prism !== 'undefined') {
+                            Prism.highlightAllUnder(contentEl);
+                        }
                         scrollToBottom();
                     }
                 } catch (parseErr) {
@@ -1125,6 +1129,9 @@ async function generateResponse(conv) {
             // Final render with proper markdown
             contentEl.innerHTML = renderMarkdown(fullResponse);
             attachCodeCopyButtons(contentEl);
+            if (typeof Prism !== 'undefined') {
+                Prism.highlightAllUnder(contentEl);
+            }
         }
 
         // Render generation stats footer
@@ -1139,6 +1146,10 @@ async function generateResponse(conv) {
             contentEl.innerHTML = fullResponse
                 ? renderMarkdown(fullResponse) + `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`
                 : `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`;
+            attachCodeCopyButtons(contentEl);
+            if (typeof Prism !== 'undefined') {
+                Prism.highlightAllUnder(contentEl);
+            }
         } else {
             console.error("Generation error:", err);
             assistantMsg.content = `⚠️ Error: ${err.message}`;
@@ -1311,6 +1322,11 @@ function renderActiveConversation() {
     // Attach copy buttons to all code blocks
     container.querySelectorAll(".message.assistant .message-content").forEach(attachCodeCopyButtons);
 
+    // Apply Prism syntax highlighting
+    if (typeof Prism !== 'undefined') {
+        Prism.highlightAllUnder(container);
+    }
+
     scrollToBottom(false);
 
     // Update context window for the loaded conversation
@@ -1395,60 +1411,265 @@ function hideWelcome() {
 }
 
 // ── Markdown Rendering ───────────────────────────────────────────────────────
-function renderMarkdown(text) {
-    if (!text) return "";
-
-    let html = escapeHtml(text);
-
-    // Code blocks: ```lang\n...\n```
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+// Configure marked if it is loaded
+if (typeof marked !== 'undefined') {
+    const renderer = new marked.Renderer();
+    
+    // Customize code block rendering
+    renderer.code = function(codeOrObj, infostring, escaped) {
+        let code = "";
+        let lang = "";
+        if (codeOrObj && typeof codeOrObj === 'object') {
+            code = codeOrObj.text || "";
+            lang = codeOrObj.lang || "";
+        } else {
+            code = codeOrObj || "";
+            lang = infostring || "";
+        }
         const langLabel = lang || "code";
         return `<div class="code-block-wrapper">
             <div class="code-block-header">
                 <span class="code-lang">${escapeHtml(langLabel)}</span>
                 <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}">📋 Copy</button>
             </div>
-            <pre><code>${code.trim()}</code></pre>
+            <pre><code class="language-${escapeHtml(langLabel)}">${escapeHtml(code.trim())}</code></pre>
         </div>`;
+    };
+    
+    // Customize table rendering to apply styling classes
+    renderer.table = function(headerOrObj, body) {
+        let headerStr = "";
+        let bodyStr = "";
+        if (headerOrObj && typeof headerOrObj === 'object') {
+            headerStr = headerOrObj.header || "";
+            bodyStr = headerOrObj.body || "";
+        } else {
+            headerStr = headerOrObj || "";
+            bodyStr = body || "";
+        }
+        return `<div class="table-responsive">
+            <table class="markdown-table">
+                <thead>${headerStr}</thead>
+                <tbody>${bodyStr}</tbody>
+            </table>
+        </div>`;
+    };
+
+    // Customize links to open in a new tab
+    renderer.link = function(hrefOrObj, title, text) {
+        let href = "";
+        let linkText = "";
+        let linkTitle = "";
+        if (hrefOrObj && typeof hrefOrObj === 'object') {
+            href = hrefOrObj.href || "";
+            linkText = hrefOrObj.text || "";
+            linkTitle = hrefOrObj.title || "";
+        } else {
+            href = hrefOrObj || "";
+            linkText = text || "";
+            linkTitle = title || "";
+        }
+        const titleAttr = linkTitle ? ` title="${escapeHtml(linkTitle)}"` : "";
+        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${linkText}</a>`;
+    };
+
+    marked.setOptions({
+        renderer: renderer,
+        gfm: true,
+        breaks: true,
+        headerIds: false,
+        mangle: false
     });
+}
 
-    // Inline code: `code`
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+function renderMarkdown(text) {
+    if (!text) return "";
+    
+    // Check if marked is available
+    if (typeof marked !== 'undefined') {
+        try {
+            return marked.parse(text);
+        } catch (e) {
+            console.error("Marked parsing error, using fallback:", e);
+            return renderMarkdownFallback(text);
+        }
+    }
+    return renderMarkdownFallback(text);
+}
 
-    // Bold: **text**
-    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+function renderMarkdownFallback(text) {
+    if (!text) return "";
 
-    // Italic: *text*
-    html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
+    // Split by code blocks: ```lang\ncode\n```
+    const parts = text.split(/(```[\s\S]*?```)/g);
+    let htmlResult = "";
 
-    // Unordered lists: - item or * item
-    html = html.replace(/^(?:[-*])\s+(.+)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (part.startsWith("```")) {
+            // It's a code block
+            const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+            if (match) {
+                const lang = match[1] || "code";
+                const code = match[2];
+                htmlResult += `<div class="code-block-wrapper">
+                    <div class="code-block-header">
+                        <span class="code-lang">${escapeHtml(lang)}</span>
+                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}">📋 Copy</button>
+                    </div>
+                    <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
+                </div>`;
+            } else {
+                // Incomplete code block (e.g. streaming)
+                const langMatch = part.match(/```(\w*)\n([\s\S]*)/);
+                if (langMatch) {
+                    const lang = langMatch[1] || "code";
+                    const code = langMatch[2];
+                    htmlResult += `<div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-lang">${escapeHtml(lang)}</span>
+                            <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}">📋 Copy</button>
+                        </div>
+                        <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
+                    </div>`;
+                } else {
+                    htmlResult += `<pre><code>${escapeHtml(part)}</code></pre>`;
+                }
+            }
+        } else {
+            // Non-code block text
+            let blockHtml = escapeHtml(part);
 
-    // Ordered lists: 1. item
-    html = html.replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>");
+            // Inline code: `code`
+            blockHtml = blockHtml.replace(/`([^`\n]+)`/g, "<code>$1</code>");
 
-    // Headers: ### text
-    html = html.replace(/^### (.+)$/gm, "<h4>$1</h4>");
-    html = html.replace(/^## (.+)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^# (.+)$/gm, "<h2>$1</h2>");
+            // Bold: **text**
+            blockHtml = blockHtml.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
-    // Links: [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+            // Italic: *text*
+            blockHtml = blockHtml.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
 
-    // Paragraphs: double newline
-    html = html.replace(/\n\n/g, "</p><p>");
+            // Strike-through: ~~text~~
+            blockHtml = blockHtml.replace(/~~(.+?)~~/g, "<del>$1</del>");
 
-    // Single newlines (outside of code blocks)
-    html = html.replace(/\n/g, "<br>");
+            // Links: [text](url)
+            blockHtml = blockHtml.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
-    // Wrap in paragraph
-    html = `<p>${html}</p>`;
+            // Headers: # text
+            blockHtml = blockHtml.replace(/^###### (.+)$/gm, "<h6>$1</h6>");
+            blockHtml = blockHtml.replace(/^##### (.+)$/gm, "<h5>$1</h5>");
+            blockHtml = blockHtml.replace(/^#### (.+)$/gm, "<h4>$1</h4>");
+            blockHtml = blockHtml.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+            blockHtml = blockHtml.replace(/^## (.+)$/gm, "<h3>$1</h3>");
+            blockHtml = blockHtml.replace(/^# (.+)$/gm, "<h2>$1</h2>");
 
-    // Clean up empty paragraphs
-    html = html.replace(/<p><\/p>/g, "");
+            // Blockquotes: > text
+            blockHtml = blockHtml.replace(/^&gt;\s+(.+)$/gm, "<blockquote>$1</blockquote>");
+            // Group consecutive blockquotes
+            blockHtml = blockHtml.replace(/(<blockquote>.*<\/blockquote>\n?)+/g, (m) => {
+                return `<blockquote>${m.replace(/<\/?blockquote>/g, "").replace(/\n/g, "<br>")}</blockquote>`;
+            });
 
-    return html;
+            // Unordered lists: - item or * item
+            blockHtml = blockHtml.replace(/^(?:[-*]|\x20{0,3}[-*])\s+(.+)$/gm, "<li>$1</li>");
+            // Group consecutive list items
+            blockHtml = blockHtml.replace(/(<li>.*<\/li>\n?)+/g, "<ul>$&</ul>");
+
+            // Ordered lists: 1. item
+            blockHtml = blockHtml.replace(/^(\d+)\.\s+(.+)$/gm, '<li data-index="$1">$2</li>');
+            blockHtml = blockHtml.replace(/(<li data-index="\d+">.*<\/li>\n?)+/g, "<ol>$&</ol>");
+
+            // Horizontal rules
+            blockHtml = blockHtml.replace(/^---$/gm, "<hr>");
+            blockHtml = blockHtml.replace(/^\*\*\*$/gm, "<hr>");
+
+            // Tables
+            const lines = blockHtml.split("\n");
+            let inTable = false;
+            let tableHeaders = [];
+            let tableRows = [];
+            let newLines = [];
+
+            for (let j = 0; j < lines.length; j++) {
+                const line = lines[j].trim();
+                if (line.startsWith("|") && line.endsWith("|")) {
+                    const cells = line.split("|").slice(1, -1).map(c => c.trim());
+                    if (!inTable) {
+                        const nextLine = lines[j + 1] ? lines[j + 1].trim() : "";
+                        if (nextLine.startsWith("|") && nextLine.includes("---")) {
+                            inTable = true;
+                            tableHeaders = cells;
+                            j++;
+                        } else {
+                            newLines.push(lines[j]);
+                        }
+                    } else {
+                        tableRows.push(cells);
+                    }
+                } else {
+                    if (inTable) {
+                        let tableHtml = '<div class="table-responsive"><table class="markdown-table"><thead><tr>';
+                        tableHeaders.forEach(h => {
+                            tableHtml += `<th>${h}</th>`;
+                        });
+                        tableHtml += '</tr></thead><tbody>';
+                        tableRows.forEach(row => {
+                            tableHtml += '<tr>';
+                            row.forEach(c => {
+                                tableHtml += `<td>${c}</td>`;
+                            });
+                            tableHtml += '</tr>';
+                        });
+                        tableHtml += '</tbody></table></div>';
+                        newLines.push(tableHtml);
+                        inTable = false;
+                        tableHeaders = [];
+                        tableRows = [];
+                    }
+                    newLines.push(lines[j]);
+                }
+            }
+            if (inTable) {
+                let tableHtml = '<div class="table-responsive"><table class="markdown-table"><thead><tr>';
+                tableHeaders.forEach(h => {
+                    tableHtml += `<th>${h}</th>`;
+                });
+                tableHtml += '</tr></thead><tbody>';
+                tableRows.forEach(row => {
+                    tableHtml += '<tr>';
+                    row.forEach(c => {
+                        tableHtml += `<td>${c}</td>`;
+                    });
+                    tableHtml += '</tr>';
+                });
+                tableHtml += '</tbody></table></div>';
+                newLines.push(tableHtml);
+            }
+
+            blockHtml = newLines.join("\n");
+
+            // Convert remaining double newlines to paragraphs
+            blockHtml = blockHtml.replace(/\n\n/g, "</p><p>");
+
+            // Convert remaining single newlines to br
+            blockHtml = blockHtml.replace(/\n/g, "<br>");
+
+            // Clean up list newlines
+            blockHtml = blockHtml.replace(/<\/ul><br>/g, "</ul>");
+            blockHtml = blockHtml.replace(/<\/ol><br>/g, "</ol>");
+            blockHtml = blockHtml.replace(/<\/blockquote><br>/g, "</blockquote>");
+            blockHtml = blockHtml.replace(/<\/div><br>/g, "</div>");
+
+            htmlResult += blockHtml;
+        }
+    }
+
+    if (!htmlResult.startsWith("<p>") && !htmlResult.startsWith("<div") && !htmlResult.startsWith("<h") && !htmlResult.startsWith("<blockquote")) {
+        htmlResult = `<p>${htmlResult}</p>`;
+    }
+
+    htmlResult = htmlResult.replace(/<p><\/p>/g, "");
+    return htmlResult;
 }
 
 function attachCodeCopyButtons(container) {
@@ -2007,6 +2228,36 @@ function initSVGGradient() {
 }
 
 // ── Settings Modal ────────────────────────────────────────────────────────
+function wireContextPresets() {
+    const presetsContainer = document.querySelector(".context-presets");
+    if (!presetsContainer) return;
+    
+    presetsContainer.querySelectorAll(".preset-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const val = parseInt(btn.dataset.value, 10);
+            if (dom.settingMaxInputTokens) {
+                dom.settingMaxInputTokens.value = val;
+                dom.settingMaxInputTokensVal.textContent = val;
+                dom.settingMaxInputTokens.dispatchEvent(new Event("input"));
+            }
+        });
+    });
+
+    if (dom.settingMaxInputTokens) {
+        dom.settingMaxInputTokens.addEventListener("input", (e) => {
+            const currentVal = parseInt(e.target.value, 10);
+            presetsContainer.querySelectorAll(".preset-btn").forEach(btn => {
+                const presetVal = parseInt(btn.dataset.value, 10);
+                if (presetVal === currentVal) {
+                    btn.classList.add("active");
+                } else {
+                    btn.classList.remove("active");
+                }
+            });
+        });
+    }
+}
+
 function openSettingsModal() {
     if (dom.btnSettings) dom.btnSettings.classList.remove("minimized-active");
     if (state.modelConfig) {
@@ -2020,6 +2271,8 @@ function openSettingsModal() {
         if (dom.settingMaxInputTokens) {
             dom.settingMaxInputTokens.value = state.modelConfig.max_input_tokens || 1024;
             dom.settingMaxInputTokensVal.textContent = dom.settingMaxInputTokens.value;
+            // Update active preset button styling
+            dom.settingMaxInputTokens.dispatchEvent(new Event("input"));
         }
         // update select option disabled states
         const friendly = state.modelConfig.device_friendly || state.modelConfig.device || "—";
