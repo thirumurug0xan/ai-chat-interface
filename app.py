@@ -242,7 +242,7 @@ def context_count():
         return jsonify({"error": "Model not loaded"}), 503
 
     used = engine.count_tokens(data["messages"])
-    max_tok = engine.max_input_tokens
+    max_tok = engine.effective_max_input_tokens
     pct = round((used / max_tok) * 100, 1) if max_tok > 0 else 0
 
     return jsonify({

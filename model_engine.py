@@ -14,13 +14,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Suppress the Mistral/Qwen regex tokenization warning
+# Suppress the Mistral/Qwen regex tokenization warning and length warning
 warnings.filterwarnings("ignore", message=".*incorrect regex pattern.*")
+warnings.filterwarnings("ignore", message=".*Token indices sequence length is longer.*")
 
 # GPU OOM error patterns to detect and handle gracefully
 _GPU_OOM_PATTERNS = [
     "exceed_allocatable_mem_size",
+    "exceed_available_mem_size",
     "Exceeded max size of memory object allocation",
+    "Exceeded max size of memory allocation",
     "out of memory",
 ]
 
@@ -545,9 +548,71 @@ class ModelEngine:
                 devices.extend(["GPU", "XPU"])
         return devices
 
+    def get_model_max_sequence_length(self) -> int:
+        """Retrieve the maximum sequence length supported by the model config or tokenizer."""
+        # Try model config first
+        if self.model and hasattr(self.model, "config"):
+            config = self.model.config
+            for attr in ("max_position_embeddings", "max_sequence_length", "seq_length", "n_positions"):
+                val = getattr(config, attr, None)
+                if isinstance(val, int) and 0 < val < 1000000:
+                    return val
+        
+        # Try tokenizer next
+        if self.tokenizer and hasattr(self.tokenizer, "model_max_length"):
+            val = self.tokenizer.model_max_length
+            if isinstance(val, int) and 0 < val < 1000000:
+                return val
+                
+        return 4096  # Default fallback if unknown
+
+    @property
+    def effective_max_input_tokens(self) -> int:
+        """Return the effective maximum input tokens capped by model's physical limit."""
+        if not self._loaded:
+            return self.max_input_tokens
+        return min(self.max_input_tokens, self.get_model_max_sequence_length())
+
     def get_config(self):
         """Return current configuration as a dict (safe for JSON)."""
         active = self._active_device or self.device
+        model_limit = self.get_model_max_sequence_length() if self._loaded else 4096
+        
+        # Extract architectural properties for memory warning calculations
+        num_layers = 32
+        num_kv_heads = 8
+        head_dim = 128
+        kv_precision = 2  # Default FP16 (2 bytes)
+        
+        if self.model and hasattr(self.model, "config"):
+            config = self.model.config
+            
+            # Layers
+            for attr in ("num_hidden_layers", "n_layers", "num_layers"):
+                val = getattr(config, attr, None)
+                if isinstance(val, int) and val > 0:
+                    num_layers = val
+                    break
+            
+            # KV Heads
+            num_kv_heads = getattr(config, "num_key_value_heads", None)
+            if not isinstance(num_kv_heads, int) or num_kv_heads <= 0:
+                num_kv_heads = getattr(config, "num_attention_heads", 8)
+                
+            # Head Dimension
+            hidden_size = getattr(config, "hidden_size", None)
+            num_attention_heads = getattr(config, "num_attention_heads", None)
+            if isinstance(hidden_size, int) and isinstance(num_attention_heads, int) and num_attention_heads > 0:
+                head_dim = hidden_size // num_attention_heads
+            else:
+                head_dim = getattr(config, "head_dim", 128)
+                
+        # Check if KV cache precision is set to u8 or similar
+        if self.ov_config and isinstance(self.ov_config, dict):
+            prec = self.ov_config.get("KV_CACHE_PRECISION", "").lower()
+            if "u8" in prec or "int8" in prec or "i8" in prec:
+                kv_precision = 1
+                
         return {
             "model_name": self.model_name,
             "model_path": self.model_path,
@@ -559,6 +624,14 @@ class ModelEngine:
             "max_new_tokens": self.max_new_tokens,
             "max_history": self.max_history,
             "max_input_tokens": self.max_input_tokens,
+            "effective_max_input_tokens": self.effective_max_input_tokens,
+            "model_max_sequence_length": model_limit,
+            "model_architecture": {
+                "num_layers": num_layers,
+                "num_kv_heads": num_kv_heads,
+                "head_dim": head_dim,
+                "kv_precision_bytes": kv_precision,
+            },
             "loaded": self._loaded,
             "use_cache": self._use_cache,
             "model_file": self.model_file,
@@ -570,7 +643,7 @@ class ModelEngine:
     def _trim_history_to_fit(self, history: list[dict]) -> list[dict]:
         """
         Trim conversation history so the tokenized input fits within
-        max_input_tokens. Removes the oldest messages first (but always
+        the effective max_input_tokens. Removes the oldest messages first (but always
         keeps the most recent user message).
 
         Args:
@@ -579,17 +652,18 @@ class ModelEngine:
         Returns:
             Trimmed history that fits within the token budget.
         """
+        effective_max = self.effective_max_input_tokens
         # Start with the configured max_history limit, but scale it up if the context window is large
-        history_limit = max(self.max_history, 1000) if self.max_input_tokens > 4096 else self.max_history
+        history_limit = max(self.max_history, 1000) if effective_max > 4096 else self.max_history
         trimmed = history[-history_limit:]
 
         while len(trimmed) > 0:
             text = self.tokenizer.apply_chat_template(
                 trimmed, tokenize=False, add_generation_prompt=True
             )
-            token_count = len(self.tokenizer.encode(text))
+            token_count = len(self.tokenizer.encode(text, verbose=False))
 
-            if token_count <= self.max_input_tokens:
+            if token_count <= effective_max:
                 return trimmed
 
             # If only 1 message left and it's still too long, we have to keep it
@@ -597,14 +671,14 @@ class ModelEngine:
             if len(trimmed) <= 1:
                 print(
                     f"[ModelEngine] WARNING: Single message has {token_count} tokens "
-                    f"(limit: {self.max_input_tokens}). Proceeding anyway."
+                    f"(limit: {effective_max}). Proceeding anyway."
                 )
                 return trimmed
 
             # Remove the oldest message
             print(
                 f"[ModelEngine] Input too long ({token_count} tokens > "
-                f"{self.max_input_tokens}). Trimming oldest message..."
+                f"{effective_max}). Trimming oldest message..."
             )
             trimmed = trimmed[1:]
 
@@ -660,8 +734,8 @@ class ModelEngine:
             except RuntimeError as e:
                 if _is_gpu_oom_error(e):
                     raise RuntimeError(
-                        "GPU ran out of memory. Try a shorter message, start a new "
-                        "conversation, or switch to CPU in the .env configuration."
+                        "GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) "
+                        "in settings, starting a new conversation, or switching the device to CPU."
                     ) from e
                 raise
 
@@ -749,7 +823,7 @@ class ModelEngine:
                     yield chunk
         except Exception as e:
             if _is_gpu_oom_error(e):
-                yield "\n\n⚠️ GPU ran out of memory. Please start a new conversation or switch to CPU."
+                yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
             else:
                 raise
 
@@ -766,7 +840,7 @@ class ModelEngine:
         if generation_error[0] is not None:
             err = generation_error[0]
             if _is_gpu_oom_error(err):
-                yield "\n\n⚠️ GPU ran out of memory. Please start a new conversation or switch to CPU."
+                yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
             else:
                 raise RuntimeError(f"Generation failed: {err}") from err
 
@@ -879,11 +953,51 @@ class MultiModelManager:
                 "loaded_models": self.get_loaded_models(),
             }
         except Exception as e:
+            # Check if this is a GPU memory/OOM error. If so, and we have other models loaded,
+            # try to unload all other models to free memory and retry loading.
+            if _is_gpu_oom_error(e) and len(self._engines) > 0:
+                print(f"[MultiModelManager] GPU OOM during load. Unloading other models to free memory...")
+                # Create a list of paths to unload (all except the current one)
+                other_paths = [p for p in list(self._engines.keys()) if p != model_path]
+                for path in other_paths:
+                    try:
+                        self.unload_model(path)
+                    except Exception as unload_err:
+                        print(f"[MultiModelManager] Failed to unload {path}: {unload_err}")
+                
+                # Force garbage collection
+                gc.collect()
+                time.sleep(1.0)  # Give GPU driver a moment to reclaim memory
+                
+                # Retry loading
+                try:
+                    print(f"[MultiModelManager] Retrying load of {eng.model_name} after freeing memory...")
+                    eng.load()
+                    self._engines[model_path] = eng
+                    if make_active:
+                        self._active_path = model_path
+                    return {
+                        "success": True,
+                        "model_name": eng.model_name,
+                        "model_path": model_path,
+                        "message": f"Successfully loaded model: {eng.model_name} (unloaded other models to free GPU memory)",
+                        "warnings": list(eng._last_load_warnings),
+                        "loaded_models": self.get_loaded_models(),
+                    }
+                except Exception as retry_e:
+                    e = retry_e  # Update exception for the fallback message below
+
+            msg = str(e)
+            if _is_gpu_oom_error(e):
+                msg = (
+                    "GPU ran out of memory while loading the model. "
+                    "Try reducing the context window/history size, or switch the device to CPU."
+                )
             return {
                 "success": False,
                 "model_name": "",
                 "model_path": model_path,
-                "message": f"Failed to load model: {str(e)}",
+                "message": f"Failed to load model: {msg}",
                 "warnings": [],
                 "loaded_models": self.get_loaded_models(),
             }
@@ -1027,6 +1141,11 @@ class MultiModelManager:
         eng = self.active_engine
         if eng:
             eng.max_input_tokens = val
+
+    @property
+    def effective_max_input_tokens(self):
+        eng = self.active_engine
+        return eng.effective_max_input_tokens if eng else 1024
 
     @property
     def _requested_device(self):

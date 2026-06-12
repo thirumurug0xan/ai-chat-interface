@@ -144,6 +144,27 @@ body {
     margin-bottom: 20px;
 }
 
+.btn-sidebar-close {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 6px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.btn-sidebar-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-glass);
+}
+
 .sidebar-logo .logo-icon {
     width: 36px;
     height: 36px;
@@ -154,6 +175,14 @@ body {
     justify-content: center;
     font-size: 18px;
     box-shadow: var(--shadow-glow);
+}
+
+.sidebar-logo .logo-icon svg {
+    width: 22px;
+    height: 22px;
+    stroke: #ffffff;
+    stroke-width: 2px;
+    fill: none;
 }
 
 .sidebar-logo h1 {
@@ -1106,6 +1135,15 @@ body {
 
 .btn-copy-code.copied {
     color: var(--accent-2);
+}
+
+.btn-copy-code svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    stroke: currentColor;
+    stroke-width: 2px;
+    fill: none;
 }
 
 .message-content pre {
@@ -2837,6 +2875,54 @@ body {
     border-radius: 12px;
 }
 
+.setting-value-input {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-3);
+    background: rgba(108, 92, 231, 0.08);
+    border: 1px solid rgba(108, 92, 231, 0.25);
+    padding: 2px 6px;
+    border-radius: 6px;
+    width: 80px;
+    text-align: right;
+    transition: all 0.2s ease;
+}
+
+.setting-value-input:focus {
+    outline: none;
+    border-color: var(--accent-3);
+    background: rgba(108, 92, 231, 0.15);
+    box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.2);
+}
+
+.context-warning-alert {
+    display: block;
+    background: rgba(243, 156, 18, 0.1);
+    border: 1px solid rgba(243, 156, 18, 0.25);
+    color: #f39c12;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.45;
+    margin-top: 10px;
+    transition: all 0.2s ease;
+}
+
+.context-warning-alert strong {
+    font-weight: 600;
+}
+
+.context-warning-alert.critical {
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.25);
+    color: #e74c3c;
+}
+
+.context-warning-alert.hidden {
+    display: none;
+}
+
 .setting-description {
     font-size: 11.5px;
     color: var(--text-tertiary);
@@ -4200,6 +4286,18 @@ body {
 
 /* Left Sidebar - Notes List */
 .notes-sidebar {
+    width: 200px;
+    min-width: 200px;
+    border-right: 1px solid var(--border-subtle);
+    padding: 12px 16px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    flex-shrink: 0;
+    transition: width 0.3s ease;
+}
+
+.notes-sidebar.hidden {
     display: none !important;
 }
 
@@ -4923,6 +5021,85 @@ body {
 .modal-overlay.non-blocking-overlay .modal {
     pointer-events: auto !important;
     box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Docked Mousepad layout */
+.modal-overlay.non-blocking-overlay.docked {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    width: auto !important; /* Wrap around modal width */
+    height: 100% !important;
+    pointer-events: auto !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    z-index: 10 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
+.modal-overlay.docked .notes-modal {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: 450px; /* Default docked width */
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border-left: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    border-right: 1px solid var(--border-subtle) !important;
+}
+
+.modal-overlay.docked .resize-handle {
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 6px !important;
+    height: 100% !important;
+    cursor: ew-resize !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-bottom-right-radius: 0 !important;
+    opacity: 0.8 !important;
+    border-right: 1px solid var(--border-subtle) !important;
+}
+
+.modal-overlay.docked .resize-handle:hover {
+    background: rgba(108, 92, 231, 0.15) !important;
+    border-right-color: var(--accent-3) !important;
+}
+
+/* Squeeze the chat window main interface dynamically when notes are docked next to it */
+.notes-docked .main {
+    flex: 1 !important;
+}
+
+/* Responsive side-by-side docking disablement on smaller screen sizes */
+@media (max-width: 992px) {
+    .modal-overlay.non-blocking-overlay.docked {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        pointer-events: none !important;
+    }
+    .modal-overlay.docked .notes-modal {
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 95% !important;
+        height: 80vh !important;
+        border-right: none !important;
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5) !important;
+        border-radius: var(--radius-xl) !important;
+    }
 }
 
 /* GTK Windows Styles (XFCE Mousepad Look) */
