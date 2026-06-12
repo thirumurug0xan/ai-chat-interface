@@ -14,6 +14,8 @@ const state = {
     modelConfig: null,
     maxTokens: 2048,
     maxInputTokens: 1024,       // context window size from config
+    currentUsedTokens: 0,       // Track current used tokens
+    systemStats: null,          // Real-time system specs
 };
 
 const fsState = {
@@ -104,6 +106,8 @@ const dom = {
     contextPopupFullscreen: $("#context-popup-fullscreen"),
     gaugePercent: $("#gauge-percent"),
     gaugeFill: $("#gauge-fill"),
+    contextPopupLimitSlider: $("#context-popup-limit-slider"),
+    contextPopupLimitInput: $("#context-popup-limit-input"),
     ctxTokensUsed: $("#ctx-tokens-used"),
     ctxTokensMax: $("#ctx-tokens-max"),
     ctxTokensRemaining: $("#ctx-tokens-remaining"),
@@ -237,6 +241,7 @@ const dom = {
     chkMenuLinenumbers: $("#chk-menu-linenumbers"),
     chkMenuWordwrap: $("#chk-menu-wordwrap"),
     chkMenuHighlight: $("#chk-menu-highlight"),
+    chkMenuSidebar: $("#chk-menu-sidebar"),
     // Model Switcher
     modelSwitcherBar: $("#model-switcher-bar"),
     modelSwitcherBtn: $("#model-switcher-btn"),
@@ -277,6 +282,14 @@ function closeOverlay(overlayEl) {
 
 // ── Initialization ───────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
+    // Relocate Mousepad notes modal inside #app for side-by-side flex layout
+    const notesOverlay = document.getElementById("notes-modal-overlay");
+    const appContainer = document.getElementById("app");
+    const mainChat = document.querySelector("main.main");
+    if (notesOverlay && appContainer && mainChat) {
+        appContainer.insertBefore(notesOverlay, mainChat);
+    }
+
     initTheme();
     loadState();
     initEventListeners();
@@ -312,6 +325,10 @@ function initEventListeners() {
 
     // Toggle sidebar
     dom.btnToggleSidebar.addEventListener("click", toggleSidebar);
+    const btnSidebarClose = $("#btn-sidebar-close");
+    if (btnSidebarClose) {
+        btnSidebarClose.addEventListener("click", toggleSidebar);
+    }
     dom.sidebarOverlay.addEventListener("click", () => {
         dom.sidebar.classList.add("collapsed");
         dom.sidebarOverlay.classList.remove("visible");
@@ -339,6 +356,13 @@ function initEventListeners() {
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
+        // Ctrl+B or Cmd+B — Toggle Main Chat Sidebar
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+            e.preventDefault();
+            toggleSidebar();
+            return;
+        }
+
         // Ctrl+K or Cmd+K — Command Palette
         if ((e.ctrlKey || e.metaKey) && e.key === "k") {
             e.preventDefault();
@@ -387,6 +411,17 @@ function initEventListeners() {
             if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
                 e.preventDefault();
                 renameActiveNote();
+            }
+        }
+
+        // F9 — Toggle Mousepad Sidebar (if notes modal is visible)
+        if (e.key === "F9") {
+            if (dom.notesOverlay && dom.notesOverlay.classList.contains("visible")) {
+                e.preventDefault();
+                if (dom.chkMenuSidebar) {
+                    dom.chkMenuSidebar.checked = !dom.chkMenuSidebar.checked;
+                    dom.chkMenuSidebar.dispatchEvent(new Event("change"));
+                }
             }
         }
 
@@ -472,18 +507,58 @@ function initEventListeners() {
         });
     }
 
-    // Settings sliders dynamic badges
+    // Settings sliders dynamic badges and inputs
     if (dom.settingMaxNewTokens) {
         dom.settingMaxNewTokens.addEventListener("input", (e) => {
-            dom.settingMaxNewTokensVal.textContent = e.target.value;
+            if (dom.settingMaxNewTokensVal) dom.settingMaxNewTokensVal.value = e.target.value;
+        });
+    }
+    if (dom.settingMaxNewTokensVal) {
+        dom.settingMaxNewTokensVal.addEventListener("input", (e) => {
+            const val = parseInt(e.target.value, 10);
+            if (!isNaN(val) && val >= 64 && val <= 8192) {
+                dom.settingMaxNewTokens.value = val;
+            }
         });
     }
 
     if (dom.settingMaxInputTokens) {
         dom.settingMaxInputTokens.addEventListener("input", (e) => {
-            dom.settingMaxInputTokensVal.textContent = e.target.value;
+            if (dom.settingMaxInputTokensVal) dom.settingMaxInputTokensVal.value = e.target.value;
+            refreshContextWarnings(e.target.value);
         });
         wireContextPresets();
+    }
+    if (dom.settingMaxInputTokensVal) {
+        dom.settingMaxInputTokensVal.addEventListener("input", (e) => {
+            const val = parseInt(e.target.value, 10);
+            if (!isNaN(val) && val >= 256 && val <= 128000) {
+                dom.settingMaxInputTokens.value = val;
+                dom.settingMaxInputTokens.dispatchEvent(new Event("input"));
+            }
+            refreshContextWarnings(e.target.value);
+        });
+    }
+
+    // Context popup quick-limit controls
+    if (dom.contextPopupLimitSlider) {
+        dom.contextPopupLimitSlider.addEventListener("input", (e) => {
+            if (dom.contextPopupLimitInput) {
+                dom.contextPopupLimitInput.value = e.target.value;
+            }
+            refreshContextWarnings(e.target.value);
+        });
+        dom.contextPopupLimitSlider.addEventListener("change", (e) => {
+            updateMaxInputTokens(e.target.value);
+        });
+    }
+    if (dom.contextPopupLimitInput) {
+        dom.contextPopupLimitInput.addEventListener("input", (e) => {
+            refreshContextWarnings(e.target.value);
+        });
+        dom.contextPopupLimitInput.addEventListener("change", (e) => {
+            updateMaxInputTokens(e.target.value);
+        });
     }
 
     // Settings save button
@@ -936,18 +1011,18 @@ async function fetchConfig() {
             state.maxTokens = data.max_new_tokens;
             if (dom.settingMaxNewTokens) {
                 dom.settingMaxNewTokens.value = data.max_new_tokens;
-                dom.settingMaxNewTokensVal.textContent = data.max_new_tokens;
+                if (dom.settingMaxNewTokensVal) dom.settingMaxNewTokensVal.value = data.max_new_tokens;
             }
         }
 
         // Store context window size
         if (data.max_input_tokens) {
-            state.maxInputTokens = data.max_input_tokens;
+            state.maxInputTokens = data.effective_max_input_tokens || data.max_input_tokens;
             if (dom.settingMaxInputTokens) {
                 dom.settingMaxInputTokens.value = data.max_input_tokens;
-                dom.settingMaxInputTokensVal.textContent = data.max_input_tokens;
+                if (dom.settingMaxInputTokensVal) dom.settingMaxInputTokensVal.value = data.max_input_tokens;
             }
-            updateContextWindowUI(0, data.max_input_tokens);
+            updateContextWindowUI(0, state.maxInputTokens);
         }
 
         // Update model switcher label
@@ -1382,8 +1457,11 @@ function appendMessageToDOM(msg, animate = true) {
 
     // Copy button
     div.querySelector(".btn-copy-message")?.addEventListener("click", () => {
-        navigator.clipboard.writeText(msg.content).then(() => {
+        copyToClipboard(msg.content).then(() => {
             showToast("Message copied!", "success");
+        }).catch((err) => {
+            console.error("Failed to copy message:", err);
+            showToast("Failed to copy message", "error");
         });
     });
 
@@ -1430,7 +1508,7 @@ if (typeof marked !== 'undefined') {
         return `<div class="code-block-wrapper">
             <div class="code-block-header">
                 <span class="code-lang">${escapeHtml(langLabel)}</span>
-                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}">📋 Copy</button>
+                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
             </div>
             <pre><code class="language-${escapeHtml(langLabel)}">${escapeHtml(code.trim())}</code></pre>
         </div>`;
@@ -1515,7 +1593,7 @@ function renderMarkdownFallback(text) {
                 htmlResult += `<div class="code-block-wrapper">
                     <div class="code-block-header">
                         <span class="code-lang">${escapeHtml(lang)}</span>
-                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}">📋 Copy</button>
+                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
                     </div>
                     <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
                 </div>`;
@@ -1528,7 +1606,7 @@ function renderMarkdownFallback(text) {
                     htmlResult += `<div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-lang">${escapeHtml(lang)}</span>
-                            <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}">📋 Copy</button>
+                            <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
                         </div>
                         <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
                     </div>`;
@@ -1676,16 +1754,44 @@ function attachCodeCopyButtons(container) {
     container.querySelectorAll(".btn-copy-code").forEach((btn) => {
         btn.addEventListener("click", () => {
             const code = decodeURIComponent(btn.dataset.code);
-            navigator.clipboard.writeText(code).then(() => {
-                btn.textContent = "✓ Copied";
+            copyToClipboard(code).then(() => {
+                btn.innerHTML = `<svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied`;
                 btn.classList.add("copied");
                 setTimeout(() => {
-                    btn.textContent = "📋 Copy";
+                    btn.innerHTML = `<svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
                     btn.classList.remove("copied");
                 }, 2000);
+            }).catch((err) => {
+                console.error("Failed to copy code block:", err);
+                showToast("Failed to copy code block", "error");
             });
         });
     });
+}
+
+// ── UI Helpers ───────────────────────────────────────────────────────────────
+function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+    } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            document.execCommand("copy");
+            document.body.removeChild(textArea);
+            return Promise.resolve();
+        } catch (err) {
+            document.body.removeChild(textArea);
+            return Promise.reject(err);
+        }
+    }
 }
 
 // ── UI Helpers ───────────────────────────────────────────────────────────────
@@ -2179,6 +2285,172 @@ function openContextPopup() {
     if (dom.contextWindow) dom.contextWindow.classList.remove("minimized-active");
     dom.contextPopup.classList.add("visible");
     dom.contextWindow.classList.add("active");
+    
+    // Populate the quick settings in context popup
+    if (dom.contextPopupLimitSlider && state.modelConfig) {
+        dom.contextPopupLimitSlider.value = state.modelConfig.max_input_tokens || 1024;
+    }
+    if (dom.contextPopupLimitInput && state.modelConfig) {
+        dom.contextPopupLimitInput.value = state.modelConfig.max_input_tokens || 1024;
+    }
+    
+    // Initialize warnings
+    refreshContextWarnings(state.modelConfig ? state.modelConfig.max_input_tokens : 1024);
+}
+
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function checkContextMemoryWarning(targetValue) {
+    const val = parseInt(targetValue, 10);
+    if (isNaN(val) || !state.modelConfig) return { show: false };
+
+    // Get model architecture parameters
+    const arch = state.modelConfig.model_architecture || {
+        num_layers: 32,
+        num_kv_heads: 8,
+        head_dim: 128,
+        kv_precision_bytes: 2
+    };
+
+    // Calculate KV cache size in bytes
+    const kvCacheBytes = 2 * arch.num_layers * arch.num_kv_heads * arch.head_dim * arch.kv_precision_bytes * val;
+    const cacheDisplay = formatBytes(kvCacheBytes);
+
+    // Get current hardware stats
+    const stats = state.systemStats;
+    if (!stats) return { show: false };
+
+    const device = (state.modelConfig.device || "CPU").toUpperCase();
+    const isGPU = device === "GPU" || device === "AUTO" || device === "XPU" || device.includes("HETERO");
+
+    let freeBytes = 0;
+    let totalBytes = 0;
+    let label = "";
+
+    if (isGPU && stats.gpu) {
+        freeBytes = stats.gpu.free_bytes;
+        totalBytes = stats.gpu.total_bytes;
+        label = `GPU VRAM (${stats.gpu.name || "GPU"})`;
+    } else {
+        freeBytes = stats.ram.free_bytes;
+        totalBytes = stats.ram.total_bytes;
+        label = "System RAM";
+    }
+
+    const remainingFreeAfterCache = freeBytes - kvCacheBytes;
+    
+    let isCritical = false;
+    let isWarning = false;
+    let msg = "";
+
+    if (remainingFreeAfterCache < 0) {
+        isCritical = true;
+        msg = `⚠️ <strong>Critical Memory Limit:</strong> Est. KV-Cache (${cacheDisplay}) exceeds current free ${label} (${formatBytes(freeBytes)}). Generating responses will trigger out-of-memory crashes.`;
+    } else if (remainingFreeAfterCache < 1.0 * 1024 * 1024 * 1024) {
+        isWarning = true;
+        msg = `⚠️ <strong>Low Memory Warning:</strong> Est. KV-Cache (${cacheDisplay}) leaves only ${formatBytes(remainingFreeAfterCache)} free space on ${label}. This may cause slowdowns or crash the model.`;
+    } else if (kvCacheBytes > 0.5 * totalBytes) {
+        isWarning = true;
+        msg = `⚠️ <strong>High Cache Memory Warning:</strong> Est. KV-Cache (${cacheDisplay}) will consume more than 50% of total ${label}.`;
+    }
+
+    return {
+        show: isCritical || isWarning,
+        isCritical,
+        message: msg
+    };
+}
+
+function refreshContextWarnings(value) {
+    const check = checkContextMemoryWarning(value);
+    
+    // settings warning
+    const settingsAlert = document.getElementById("settings-context-warning");
+    if (settingsAlert) {
+        if (check.show) {
+            settingsAlert.innerHTML = check.message;
+            settingsAlert.className = "context-warning-alert" + (check.isCritical ? " critical" : "");
+        } else {
+            settingsAlert.className = "context-warning-alert hidden";
+        }
+    }
+
+    // popup warning
+    const popupAlert = document.getElementById("popup-context-warning");
+    if (popupAlert) {
+        if (check.show) {
+            popupAlert.innerHTML = check.message;
+            popupAlert.className = "context-warning-alert" + (check.isCritical ? " critical" : "");
+        } else {
+            popupAlert.className = "context-warning-alert hidden";
+        }
+    }
+}
+
+async function updateMaxInputTokens(value) {
+    if (state.isGenerating) {
+        showToast("Cannot update settings while generating. Please wait.", "error");
+        return;
+    }
+    const val = parseInt(value, 10);
+    if (isNaN(val) || val < 256 || val > 128000) {
+        showToast("Invalid context window value (must be between 256 and 128000)", "error");
+        return;
+    }
+    try {
+        const res = await fetch("/api/config/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                max_input_tokens: val
+            }),
+        });
+
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.message || errData.error || "Failed to update configuration");
+        }
+
+        const data = await res.json();
+        
+        // Sync local state
+        state.modelConfig = data;
+        state.maxInputTokens = data.effective_max_input_tokens || data.max_input_tokens;
+        saveState();
+
+        // Update settings modal sliders/inputs if they exist
+        if (dom.settingMaxInputTokens) {
+            dom.settingMaxInputTokens.value = data.max_input_tokens;
+            if (dom.settingMaxInputTokensVal) {
+                dom.settingMaxInputTokensVal.value = data.max_input_tokens;
+            }
+            // Trigger input event to update preset buttons active state
+            dom.settingMaxInputTokens.dispatchEvent(new Event("input"));
+        }
+        
+        // Update context popup controls
+        if (dom.contextPopupLimitSlider) {
+            dom.contextPopupLimitSlider.value = data.max_input_tokens;
+        }
+        if (dom.contextPopupLimitInput) {
+            dom.contextPopupLimitInput.value = data.max_input_tokens;
+        }
+
+        // Update context window UI max limit
+        updateContextWindowUI(state.currentUsedTokens || 0, state.maxInputTokens);
+        
+        showToast(`Context window set to ${data.max_input_tokens} tokens`, "success");
+    } catch (err) {
+        console.error("Update max input tokens error:", err);
+        showToast(`Failed to update context window: ${err.message}`, "error");
+    }
 }
 
 function closeContextPopup() {
@@ -2266,17 +2538,20 @@ function openSettingsModal() {
         }
         if (dom.settingMaxNewTokens) {
             dom.settingMaxNewTokens.value = state.modelConfig.max_new_tokens || 2048;
-            dom.settingMaxNewTokensVal.textContent = dom.settingMaxNewTokens.value;
+            if (dom.settingMaxNewTokensVal) dom.settingMaxNewTokensVal.value = dom.settingMaxNewTokens.value;
         }
         if (dom.settingMaxInputTokens) {
             dom.settingMaxInputTokens.value = state.modelConfig.max_input_tokens || 1024;
-            dom.settingMaxInputTokensVal.textContent = dom.settingMaxInputTokens.value;
+            if (dom.settingMaxInputTokensVal) dom.settingMaxInputTokensVal.value = dom.settingMaxInputTokens.value;
             // Update active preset button styling
             dom.settingMaxInputTokens.dispatchEvent(new Event("input"));
         }
         // update select option disabled states
         const friendly = state.modelConfig.device_friendly || state.modelConfig.device || "—";
         updateDeviceSelectorUI(state.modelConfig.requested_device || "AUTO", friendly, state.modelConfig.available_devices);
+        
+        // Initialize warnings
+        refreshContextWarnings(state.modelConfig.max_input_tokens || 1024);
     }
     openOverlay(dom.settingsModalOverlay);
 }
@@ -2346,7 +2621,7 @@ async function saveSettings() {
         // Apply updated config
         state.modelConfig = data;
         state.maxTokens = data.max_new_tokens;
-        state.maxInputTokens = data.max_input_tokens;
+        state.maxInputTokens = data.effective_max_input_tokens || data.max_input_tokens;
         saveState();
 
         const friendly = data.device_friendly || data.device || newDevice;
@@ -2367,7 +2642,7 @@ async function saveSettings() {
         }
 
         // Update context window UI max limit
-        updateContextWindowUI(0, data.max_input_tokens);
+        updateContextWindowUI(0, state.maxInputTokens);
         
         // Close modal
         closeSettingsModal();
@@ -3997,6 +4272,18 @@ async function openNotesModal() {
     updateNotesCounters();
     
     if (dom.notesOverlay) {
+        dom.notesOverlay.classList.add("docked");
+        document.getElementById("app")?.classList.add("notes-docked");
+        // Reset inline positioning to allow CSS docking rules to apply
+        if (dom.notesModal) {
+            dom.notesModal.style.position = "";
+            dom.notesModal.style.margin = "";
+            dom.notesModal.style.transform = "";
+            dom.notesModal.style.left = "";
+            dom.notesModal.style.top = "";
+            dom.notesModal.style.width = "";
+            dom.notesModal.style.height = "";
+        }
         openOverlay(dom.notesOverlay);
     }
     
@@ -4039,6 +4326,8 @@ function closeNotesModal() {
     }
     
     if (dom.notesOverlay) {
+        dom.notesOverlay.classList.remove("docked");
+        document.getElementById("app")?.classList.remove("notes-docked");
         closeOverlay(dom.notesOverlay);
     }
     if (dom.btnNotes) dom.btnNotes.classList.remove("minimized-active");
@@ -4880,8 +5169,16 @@ function makeWindowDraggable(win, header) {
         let top = parseFloat(win.style.top) || 0;
         
         // On first drag, change layout structure from flex center to absolute fixed
-        if (!win.style.left || !win.style.top) {
+        if (!win.style.left || !win.style.top || win.closest(".modal-overlay")?.classList.contains("docked")) {
+            const overlay = win.closest(".modal-overlay");
             const rect = win.getBoundingClientRect();
+            
+            // If it was docked, undock it first!
+            if (overlay && overlay.classList.contains("docked")) {
+                overlay.classList.remove("docked");
+                document.getElementById("app")?.classList.remove("notes-docked");
+            }
+            
             left = rect.left;
             top = rect.top;
             
@@ -4948,8 +5245,11 @@ function makeWindowResizable(win) {
         const minWidth = 350;
         const minHeight = 220;
         
-        // On first resize, lock position from center to fixed position
-        if (!win.style.left || !win.style.top) {
+        const overlay = win.closest(".modal-overlay");
+        const isDocked = overlay && overlay.classList.contains("docked");
+
+        // On first resize, lock position from center to fixed position (only if not docked)
+        if (!isDocked && (!win.style.left || !win.style.top)) {
             win.style.position = "fixed";
             win.style.margin = "0";
             win.style.transform = "none";
@@ -4961,7 +5261,7 @@ function makeWindowResizable(win) {
             win.style.width = `${width}px`;
             win.style.maxWidth = "none";
         }
-        if (height >= minHeight) {
+        if (!isDocked && height >= minHeight) {
             win.style.height = `${height}px`;
             win.style.maxHeight = "none";
         }
@@ -5280,6 +5580,16 @@ function initGtkMenuBar() {
             if (dom.chkSyntaxHighlight) dom.chkSyntaxHighlight.checked = notesState.syntaxHighlightOn;
             updateHighlightView();
             syncHighlight();
+        });
+    }
+
+    const chkMenuSidebar = $("#chk-menu-sidebar");
+    if (chkMenuSidebar) {
+        chkMenuSidebar.addEventListener("change", (e) => {
+            const sidebar = document.querySelector(".notes-sidebar");
+            if (sidebar) {
+                sidebar.classList.toggle("hidden", !e.target.checked);
+            }
         });
     }
 
