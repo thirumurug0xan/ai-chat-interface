@@ -300,6 +300,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initSVGGradient();
     initPanelToggles();
     initWindowDraggingAndResizing();
+    updateSidebarToggleIcon();
 });
 
 // ── Event Listeners ──────────────────────────────────────────────────────────
@@ -332,6 +333,7 @@ function initEventListeners() {
     dom.sidebarOverlay.addEventListener("click", () => {
         dom.sidebar.classList.add("collapsed");
         dom.sidebarOverlay.classList.remove("visible");
+        updateSidebarToggleIcon();
     });
 
     // Scroll-to-bottom
@@ -1311,6 +1313,7 @@ function switchConversation(id) {
     if (window.innerWidth <= 768) {
         dom.sidebar.classList.add("collapsed");
         dom.sidebarOverlay.classList.remove("visible");
+        updateSidebarToggleIcon();
     }
 }
 
@@ -1813,6 +1816,7 @@ function scrollToBottom(smooth = true) {
 function toggleSidebar() {
     const isCollapsed = dom.sidebar.classList.toggle("collapsed");
     dom.sidebarOverlay.classList.toggle("visible", !isCollapsed);
+    updateSidebarToggleIcon();
 }
 
 function showToast(message, type = "info") {
@@ -4281,8 +4285,16 @@ async function openNotesModal() {
             dom.notesModal.style.transform = "";
             dom.notesModal.style.left = "";
             dom.notesModal.style.top = "";
-            dom.notesModal.style.width = "";
+            dom.notesModal.style.width = "75vw";
             dom.notesModal.style.height = "";
+        }
+        // Clicking mousepad will hide the main slide bar of the web UI
+        if (dom.sidebar) {
+            dom.sidebar.classList.add("collapsed");
+            if (dom.sidebarOverlay) {
+                dom.sidebarOverlay.classList.remove("visible");
+            }
+            updateSidebarToggleIcon();
         }
         openOverlay(dom.notesOverlay);
     }
@@ -5102,7 +5114,7 @@ function initWindowDraggingAndResizing() {
         win.style.transform = "";
         win.style.left = "";
         win.style.top = "";
-        win.style.width = "";
+        win.style.width = win === dom.notesModal ? "75vw" : "";
         win.style.height = "";
         win.style.maxWidth = "";
         win.style.maxHeight = "";
@@ -5603,4 +5615,24 @@ function initGtkMenuBar() {
 
 function closeGtkMenus() {
     $$(".gtk-menu-item").forEach(item => item.classList.remove("active"));
+}
+
+function updateSidebarToggleIcon() {
+    if (!dom.sidebar || !dom.btnToggleSidebar) return;
+    const isCollapsed = dom.sidebar.classList.contains("collapsed");
+    if (isCollapsed) {
+        dom.btnToggleSidebar.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="sidebar-toggle-svg" style="width: 20px; height: 20px; display: block;">
+                <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+        `;
+        dom.btnToggleSidebar.title = "Show Sidebar (Ctrl+B)";
+    } else {
+        dom.btnToggleSidebar.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="sidebar-toggle-svg" style="width: 20px; height: 20px; display: block;">
+                <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+        `;
+        dom.btnToggleSidebar.title = "Hide Sidebar (Ctrl+B)";
+    }
 }
