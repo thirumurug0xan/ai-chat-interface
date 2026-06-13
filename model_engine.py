@@ -178,14 +178,26 @@ class ModelEngine:
 
         for device in device_order:
             try:
-                print(f"[ModelEngine] Loading {load_path} onto {device} with use_cache={self._use_cache} and ov_config={self.ov_config}...")
+                # Prepare configuration for the specific device
+                active_ov_config = self.ov_config.copy() if self.ov_config else {}
+                
+                # Check for GPU-specific configurations
+                gpu_large_allocs = os.getenv("OV_GPU_ENABLE_LARGE_ALLOCATIONS", "True").lower() in ("true", "1", "yes")
+                if "GPU" in device.upper() or "AUTO" in device.upper() or "HETERO" in device.upper():
+                    if gpu_large_allocs and "GPU_ENABLE_LARGE_ALLOCATIONS" not in active_ov_config:
+                        active_ov_config["GPU_ENABLE_LARGE_ALLOCATIONS"] = "YES"
+                else:
+                    # Strip GPU-only properties on CPU device to prevent driver/plugin exceptions
+                    active_ov_config.pop("GPU_ENABLE_LARGE_ALLOCATIONS", None)
+
+                print(f"[ModelEngine] Loading {load_path} onto {device} with use_cache={self._use_cache} and ov_config={active_ov_config}...")
                 model_kwargs = {
                     "device": device,
                     "compile": True,
                     "use_cache": self._use_cache,
                 }
-                if self.ov_config:
-                    model_kwargs["ov_config"] = self.ov_config
+                if active_ov_config:
+                    model_kwargs["ov_config"] = active_ov_config
                 if self.model_file:
                     model_kwargs["file_name"] = self.model_file
 
@@ -213,8 +225,8 @@ class ModelEngine:
                             "compile": True,
                             "use_cache": False,
                         }
-                        if self.ov_config:
-                            retry_kwargs["ov_config"] = self.ov_config
+                        if active_ov_config:
+                            retry_kwargs["ov_config"] = active_ov_config
                         if self.model_file:
                             retry_kwargs["file_name"] = self.model_file
 
