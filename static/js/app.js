@@ -56,6 +56,8 @@ const dom = {
     welcomeScreen: $("#welcome-screen"),
     chatInput: $("#chat-input"),
     btnSend: $("#btn-send"),
+    btnChatUpload: $("#btn-chat-upload"),
+    chatFileUploadInput: $("#chat-file-upload-input"),
     btnNewChat: $("#btn-new-chat"),
     btnToggleSidebar: $("#btn-toggle-sidebar"),
     btnScrollBottom: $("#btn-scroll-bottom"),
@@ -214,6 +216,7 @@ const dom = {
     btnNotesDownload: $("#btn-notes-download") || $("#menu-file-download"),
     btnNotesSave: $("#btn-notes-save") || $("#menu-file-save"),
     notesDirInput: $("#notes-dir-input"),
+    notesFileUploadInput: $("#notes-file-upload-input"),
     btnNotesDirSave: $("#btn-notes-dir-save"),
     btnNotesDirBrowse: $("#btn-notes-dir-browse"),
     btnNotesTabAdd: $("#btn-notes-tab-add"),
@@ -320,6 +323,38 @@ function initEventListeners() {
         autoResizeTextarea();
         dom.charCount.textContent = dom.chatInput.value.length;
     });
+
+    // Chat Attachment Upload listeners
+    if (dom.btnChatUpload && dom.chatFileUploadInput) {
+        dom.btnChatUpload.addEventListener("click", () => {
+            dom.chatFileUploadInput.click();
+        });
+
+        dom.chatFileUploadInput.addEventListener("change", (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const content = evt.target.result;
+                const formatted = `[File: ${file.name}]\n\`\`\`\n${content}\n\`\`\`\n\n`;
+                const startPos = dom.chatInput.selectionStart;
+                const endPos = dom.chatInput.selectionEnd;
+                const oldVal = dom.chatInput.value;
+
+                // Insert at cursor position
+                dom.chatInput.value = oldVal.substring(0, startPos) + formatted + oldVal.substring(endPos);
+                dom.chatInput.focus();
+                dom.chatInput.selectionStart = dom.chatInput.selectionEnd = startPos + formatted.length;
+
+                autoResizeTextarea();
+                dom.charCount.textContent = dom.chatInput.value.length;
+                showToast(`Loaded '${file.name}' into chat prompt`, "success");
+            };
+            reader.readAsText(file);
+            e.target.value = "";
+        });
+    }
 
     // New chat
     dom.btnNewChat.addEventListener("click", createNewConversation);
@@ -813,6 +848,47 @@ function initEventListeners() {
             updateNotesCounters();
             checkUnsavedChanges();
             syncHighlight();
+        });
+    }
+    if (dom.notesFileUploadInput) {
+        dom.notesFileUploadInput.addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                const content = evt.target.result;
+                const filename = file.name;
+                
+                try {
+                    const res = await fetch("/api/notes/save", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ filename, content })
+                    });
+                    
+                    if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.error || `HTTP ${res.status}`);
+                    }
+                    
+                    const data = await res.json();
+                    showToast(`Uploaded and saved note '${data.filename}'`, "success");
+                    
+                    await fetchNotesList();
+                    await openNoteInTab(data.filename);
+                } catch (err) {
+                    console.error("Failed to upload file:", err);
+                    showToast(`Upload failed: ${err.message}`, "error");
+                }
+            };
+            
+            reader.onerror = () => {
+                showToast("Failed to read file", "error");
+            };
+            
+            reader.readAsText(file);
+            e.target.value = "";
         });
     }
 
@@ -5516,6 +5592,14 @@ function initGtkMenuBar() {
         openNotesFolderBrowser();
         closeGtkMenus();
     });
+
+    const fileUpload = $("#menu-file-upload");
+    if (fileUpload && dom.notesFileUploadInput) {
+        fileUpload.addEventListener("click", () => {
+            dom.notesFileUploadInput.click();
+            closeGtkMenus();
+        });
+    }
     
     const fileSave = $("#menu-file-save");
     if (fileSave) fileSave.addEventListener("click", () => { saveActiveNote(); closeGtkMenus(); });

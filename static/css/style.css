@@ -1324,6 +1324,32 @@ body {
     color: var(--text-tertiary);
 }
 
+.btn-chat-upload {
+    width: 40px;
+    height: 40px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.btn-chat-upload:hover {
+    background: var(--bg-glass-strong);
+    color: var(--text-primary);
+    border-color: var(--border-medium);
+}
+
+.btn-chat-upload:active {
+    transform: scale(0.95);
+}
+
 .btn-send {
     width: 40px;
     height: 40px;

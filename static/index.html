@@ -313,6 +313,12 @@
                 </div>
                 <div class="input-container">
                     <div class="input-wrapper">
+                        <button class="btn-chat-upload" id="btn-chat-upload" title="Upload text file to prompt">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chat-upload-svg" style="width: 20px; height: 20px; display: block;">
+                                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                            </svg>
+                        </button>
+                        <input type="file" id="chat-file-upload-input" accept=".txt,.md,.js,.json,.html,.css,text/*" style="display: none;">
                         <textarea id="chat-input" placeholder="Type a message..." rows="1" autofocus></textarea>
                         <button class="btn-send" id="btn-send" title="Send message (Enter)">
                             ➤
@@ -925,6 +931,7 @@
                     <div class="gtk-menu-dropdown">
                         <div class="gtk-dropdown-item" id="menu-file-new"><span class="item-icon">📄</span> New <span class="shortcut">Ctrl+N</span></div>
                         <div class="gtk-dropdown-item" id="menu-file-open"><span class="item-icon">📁</span> Open Folder <span class="shortcut">Ctrl+O</span></div>
+                        <div class="gtk-dropdown-item" id="menu-file-upload"><span class="item-icon">📤</span> Upload File...</div>
                         <div class="gtk-dropdown-item" id="menu-file-save"><span class="item-icon">💾</span> Save <span class="shortcut">Ctrl+S</span></div>
                         <div class="gtk-dropdown-item" id="menu-file-saveas"><span class="item-icon">💾</span> Save As... <span class="shortcut">Ctrl+Shift+S</span></div>
                         <div class="gtk-dropdown-item" id="menu-file-rename"><span class="item-icon">✏️</span> Rename... <span class="shortcut">F2</span></div>
@@ -1004,6 +1011,7 @@
                     <input type="text" id="notes-dir-input">
                     <button id="btn-notes-dir-browse"></button>
                     <button id="btn-notes-dir-save"></button>
+                    <input type="file" id="notes-file-upload-input" accept=".txt,.md,.js,.json,.html,.css,text/*" style="display: none;">
                 </div>
 
                 <div class="notes-layout" style="flex: 1; height: calc(100% - 24px); overflow: hidden;">
