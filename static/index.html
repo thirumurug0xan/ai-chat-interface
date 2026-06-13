@@ -42,9 +42,6 @@
                         <h1>AI Chat</h1>
                         <div class="version">Local Inference</div>
                     </div>
-                    <button class="btn-sidebar-close" id="btn-sidebar-close" title="Hide Sidebar (Ctrl+B)">
-                        ✕
-                    </button>
                 </div>
                 <button class="btn-new-chat" id="btn-new-chat" title="Start new conversation (Ctrl+N)">
                     <span>＋</span> New Chat
@@ -233,7 +230,9 @@
             <!-- Header -->
             <header class="header">
                 <button class="btn-toggle-sidebar" id="btn-toggle-sidebar" title="Toggle sidebar (Ctrl+B)">
-                    ☰
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="sidebar-toggle-svg" style="width: 20px; height: 20px; display: block;">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
                 </button>
                 <div class="header-title" id="header-title">New Chat</div>
                 <div class="header-actions">
@@ -956,13 +955,6 @@
                     <span class="gtk-menu-label">View</span>
                     <div class="gtk-menu-dropdown">
                         <div class="gtk-dropdown-item">
-                            <label class="menu-checkbox-label" for="chk-menu-sidebar">
-                                <input type="checkbox" id="chk-menu-sidebar" checked> Document List
-                                <span class="shortcut">F9</span>
-                            </label>
-                        </div>
-                        <div class="gtk-dropdown-divider"></div>
-                        <div class="gtk-dropdown-item">
                             <label class="menu-checkbox-label" for="chk-menu-linenumbers">
                                 <input type="checkbox" id="chk-menu-linenumbers" checked> Line Numbers
                             </label>
@@ -1015,24 +1007,6 @@
                 </div>
 
                 <div class="notes-layout" style="flex: 1; height: calc(100% - 24px); overflow: hidden;">
-                    <!-- Left sidebar: note list -->
-                    <div class="notes-sidebar">
-                        <button class="btn-new-note" id="btn-new-note" title="Create a new note">
-                            <span>＋</span> New Note
-                        </button>
-                        <div class="notes-search-wrapper">
-                            <input type="text" id="notes-search" placeholder="Search notes..." autocomplete="off">
-                            <span class="notes-search-clear" id="notes-search-clear" style="display: none;">✕</span>
-                        </div>
-                        <ul class="notes-list" id="notes-list">
-                            <!-- Populated dynamically -->
-                        </ul>
-                        <div class="empty-notes" id="empty-notes">
-                            <div class="empty-notes-icon">📝</div>
-                            <div>No notes found</div>
-                        </div>
-                    </div>
-
                     <!-- Right content: note editor -->
                     <div class="notes-editor-pane" style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
                         <!-- Tab bar row -->
