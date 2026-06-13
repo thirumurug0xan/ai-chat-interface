@@ -13,7 +13,7 @@ A premium, lightweight, local AI workstation and chat interface designed specifi
 
 ### 1. 💬 Optimized Chat Interface
 - **Server-Sent Events (SSE)**: Real-time, token-by-token streaming responses.
-- **Hardware Acceleration**: Built-in support for Intel GPU, CPU, and NPU inference, with automatic CPU fallback.
+- **Hardware Acceleration**: Built-in support for Intel GPU, CPU, and XPU inference, with automatic CPU fallback.
 - **Context Management**: Auto-trims conversational history to respect input context limitations and prevent out-of-memory (OOM) failures.
 
 ### 2. 📁 Filesystem Explorer & Dynamic GUI Loader
