@@ -20,11 +20,14 @@ warnings.filterwarnings("ignore", message=".*Token indices sequence length is lo
 
 # GPU OOM error patterns to detect and handle gracefully
 _GPU_OOM_PATTERNS = [
-    "exceed_allocatable_mem_size",
     "exceed_available_mem_size",
-    "Exceeded max size of memory object allocation",
     "Exceeded max size of memory allocation",
     "out of memory",
+]
+
+_FATAL_GPU_CRASH_PATTERNS = [
+    "exceed_allocatable_mem_size",
+    "exceeded max size of memory object allocation",
 ]
 
 
@@ -32,6 +35,12 @@ def _is_gpu_oom_error(error: Exception) -> bool:
     """Check if an exception is a GPU out-of-memory error."""
     msg = str(error).lower()
     return any(pattern.lower() in msg for pattern in _GPU_OOM_PATTERNS)
+
+
+def _is_fatal_gpu_crash_error(error: Exception) -> bool:
+    """Check if an exception is a fatal GPU allocation/crash error requiring server restart."""
+    msg = str(error).lower()
+    return any(pattern.lower() in msg for pattern in _FATAL_GPU_CRASH_PATTERNS)
 
 
 def _is_use_cache_error(error: Exception) -> bool:
@@ -226,7 +235,7 @@ class ModelEngine:
                         else:
                             raise
 
-                if _is_gpu_oom_error(e) and device != "CPU":
+                if (_is_gpu_oom_error(e) or _is_fatal_gpu_crash_error(e)) and device != "CPU":
                     print(f"[ModelEngine] GPU memory error on {device}: {e}")
                     print(f"[ModelEngine] Falling back to next device...")
                     # Clean up failed load
@@ -732,6 +741,10 @@ class ModelEngine:
                     **inputs, max_new_tokens=self.max_new_tokens
                 )
             except RuntimeError as e:
+                if _is_fatal_gpu_crash_error(e):
+                    raise RuntimeError(
+                        "The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
+                    ) from e
                 if _is_gpu_oom_error(e):
                     raise RuntimeError(
                         "GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) "
@@ -822,7 +835,9 @@ class ModelEngine:
                     token_count += len(self.tokenizer.encode(chunk, add_special_tokens=False))
                     yield chunk
         except Exception as e:
-            if _is_gpu_oom_error(e):
+            if _is_fatal_gpu_crash_error(e):
+                yield "\n\n🚨 ERROR: The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
+            elif _is_gpu_oom_error(e):
                 yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
             else:
                 raise
@@ -839,7 +854,9 @@ class ModelEngine:
         # Check if the generation thread encountered an error
         if generation_error[0] is not None:
             err = generation_error[0]
-            if _is_gpu_oom_error(err):
+            if _is_fatal_gpu_crash_error(err):
+                yield "\n\n🚨 ERROR: The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
+            elif _is_gpu_oom_error(err):
                 yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
             else:
                 raise RuntimeError(f"Generation failed: {err}") from err
@@ -955,7 +972,7 @@ class MultiModelManager:
         except Exception as e:
             # Check if this is a GPU memory/OOM error. If so, and we have other models loaded,
             # try to unload all other models to free memory and retry loading.
-            if _is_gpu_oom_error(e) and len(self._engines) > 0:
+            if (_is_gpu_oom_error(e) or _is_fatal_gpu_crash_error(e)) and len(self._engines) > 0:
                 print(f"[MultiModelManager] GPU OOM during load. Unloading other models to free memory...")
                 # Create a list of paths to unload (all except the current one)
                 other_paths = [p for p in list(self._engines.keys()) if p != model_path]
@@ -988,7 +1005,11 @@ class MultiModelManager:
                     e = retry_e  # Update exception for the fallback message below
 
             msg = str(e)
-            if _is_gpu_oom_error(e):
+            if _is_fatal_gpu_crash_error(e):
+                msg = (
+                    "The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
+                )
+            elif _is_gpu_oom_error(e):
                 msg = (
                     "GPU ran out of memory while loading the model. "
                     "Try reducing the context window/history size, or switch the device to CPU."
