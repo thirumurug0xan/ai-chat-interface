@@ -66,11 +66,13 @@ const dom = {
     conversationList: $("#conversation-list"),
     emptyConversations: $("#empty-conversations"),
     headerTitle: $("#header-title"),
+    btnStarHeader: $("#btn-star-header"),
     statusDot: $("#status-dot"),
     statusText: $("#status-text"),
     modelName: $("#model-name"),
     deviceBadge: $("#device-badge"),
     modelStatus: $("#model-status"),
+    btnUnloadModel: $("#btn-unload-model"),
     charCount: $("#char-count"),
     toastContainer: $("#toast-container"),
     // Memory monitor
@@ -622,6 +624,30 @@ function initEventListeners() {
         dom.btnSwitchModel.addEventListener("click", openModelBrowserModal);
     }
 
+    // Unload active model button
+    if (dom.btnUnloadModel) {
+        dom.btnUnloadModel.addEventListener("click", async () => {
+            const activeModel = state.modelConfig?.loaded_models?.find(m => m.is_active);
+            const path = activeModel ? activeModel.model_path : state.modelConfig?.model_path;
+            if (!path) {
+                showToast("No active model to unload", "error");
+                return;
+            }
+            if (confirm(`Are you sure you want to unload the active model: ${state.modelConfig?.model_name || "model"}?`)) {
+                await unloadModel(path);
+            }
+        });
+    }
+
+    // Star header button
+    if (dom.btnStarHeader) {
+        dom.btnStarHeader.addEventListener("click", () => {
+            if (state.activeConversationId) {
+                toggleStarConversation(state.activeConversationId);
+            }
+        });
+    }
+
     // Model Browser Modal Close & Cancel
     if (dom.modelBrowserClose) {
         dom.modelBrowserClose.addEventListener("click", closeModelBrowserModal);
@@ -1077,11 +1103,22 @@ async function fetchConfig() {
         if (data.loaded) {
             setStatus("ready", "Ready");
             dom.modelStatus.textContent = "Loaded";
+            if (dom.btnUnloadModel) {
+                dom.btnUnloadModel.style.display = "flex";
+            }
         } else {
-            setStatus("loading", "Loading model...");
-            dom.modelStatus.textContent = "Loading...";
-            // Poll until loaded
-            pollModelStatus();
+            if (dom.btnUnloadModel) {
+                dom.btnUnloadModel.style.display = "none";
+            }
+            if (!data.model_path) {
+                setStatus("error", "No model loaded");
+                dom.modelStatus.textContent = "Offline";
+            } else {
+                setStatus("loading", "Loading model...");
+                dom.modelStatus.textContent = "Loading...";
+                // Poll until loaded
+                pollModelStatus();
+            }
         }
 
         // Sync max tokens from server config
@@ -1406,6 +1443,16 @@ function deleteConversation(id, e) {
     renderActiveConversation();
 }
 
+function toggleStarConversation(id) {
+    const conv = state.conversations.find((c) => c.id === id);
+    if (conv) {
+        conv.starred = !conv.starred;
+        saveState();
+        renderConversationList();
+        renderActiveConversation();
+    }
+}
+
 function getActiveConversation() {
     return state.conversations.find((c) => c.id === state.activeConversationId);
 }
@@ -1423,6 +1470,16 @@ function renderConversationList() {
         if (conv.title.toLowerCase().includes(searchQuery)) return true;
         // Check message contents
         return conv.messages.some((msg) => msg.content.toLowerCase().includes(searchQuery));
+    });
+
+    // Sort starred conversations to the top, then by original relative order
+    filteredConversations.sort((a, b) => {
+        const aStarred = a.starred ? 1 : 0;
+        const bStarred = b.starred ? 1 : 0;
+        if (aStarred !== bStarred) {
+            return bStarred - aStarred; // Starred first
+        }
+        return 0; // Keep original order
     });
 
     if (filteredConversations.length === 0) {
@@ -1443,11 +1500,16 @@ function renderConversationList() {
         const li = document.createElement("li");
         li.className = `conversation-item ${conv.id === state.activeConversationId ? "active" : ""}`;
         li.innerHTML = `
-            <span class="conv-icon">💬</span>
+            <span class="conv-icon">${conv.starred ? "⭐" : "💬"}</span>
             <span class="conv-title">${escapeHtml(conv.title)}</span>
+            <button class="conv-star ${conv.starred ? 'starred' : ''}" title="${conv.starred ? 'Unstar conversation' : 'Star conversation'}">${conv.starred ? '★' : '☆'}</button>
             <button class="conv-delete" title="Delete conversation">✕</button>
         `;
         li.addEventListener("click", () => switchConversation(conv.id));
+        li.querySelector(".conv-star").addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleStarConversation(conv.id);
+        });
         li.querySelector(".conv-delete").addEventListener("click", (e) => deleteConversation(conv.id, e));
         list.appendChild(li);
     });
@@ -1463,11 +1525,26 @@ function renderActiveConversation() {
     if (!conv || conv.messages.length === 0) {
         showWelcome();
         dom.headerTitle.textContent = "New Chat";
+        if (dom.btnStarHeader) {
+            dom.btnStarHeader.style.display = "none";
+        }
         return;
     }
 
     hideWelcome();
     dom.headerTitle.textContent = conv.title;
+    if (dom.btnStarHeader) {
+        dom.btnStarHeader.style.display = "flex";
+        if (conv.starred) {
+            dom.btnStarHeader.classList.add("starred");
+            dom.btnStarHeader.textContent = "★";
+            dom.btnStarHeader.title = "Unstar conversation";
+        } else {
+            dom.btnStarHeader.classList.remove("starred");
+            dom.btnStarHeader.textContent = "☆";
+            dom.btnStarHeader.title = "Star conversation";
+        }
+    }
 
     conv.messages.forEach((msg) => {
         appendMessageToDOM(msg, false);
@@ -2716,9 +2793,20 @@ async function saveSettings() {
         if (data.loaded) {
             setStatus("ready", "Ready");
             dom.modelStatus.textContent = "Loaded";
+            if (dom.btnUnloadModel) {
+                dom.btnUnloadModel.style.display = "flex";
+            }
         } else {
-            setStatus("error", "Model offline");
-            dom.modelStatus.textContent = "Error";
+            if (dom.btnUnloadModel) {
+                dom.btnUnloadModel.style.display = "none";
+            }
+            if (!data.model_path) {
+                setStatus("error", "No model loaded");
+                dom.modelStatus.textContent = "Offline";
+            } else {
+                setStatus("error", "Model offline");
+                dom.modelStatus.textContent = "Error";
+            }
         }
 
         // Update context window UI max limit
@@ -3459,7 +3547,7 @@ function renderModelSwitcherDropdown() {
                     ${m.is_active ? '<span style="color: var(--accent-1); font-weight: 600;">Active</span>' : ''}
                 </div>
             </div>
-            ${!m.is_active ? `<button class="model-switcher-item-unload" data-unload-path="${escapeHtml(m.model_path)}" title="Unload this model">✕</button>` : ''}
+            <button class="model-switcher-item-unload" data-unload-path="${escapeHtml(m.model_path)}" title="Unload this model">✕</button>
         </div>
     `).join('');
     
@@ -3482,6 +3570,13 @@ function renderModelSwitcherDropdown() {
             e.stopPropagation();
             const path = btn.dataset.unloadPath;
             if (!path) return;
+            
+            const isActive = btn.closest('.model-switcher-item').classList.contains('active');
+            if (isActive) {
+                if (!confirm("Are you sure you want to unload the active model?")) {
+                    return;
+                }
+            }
             await unloadModel(path);
         });
     });

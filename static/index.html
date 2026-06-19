@@ -105,6 +105,10 @@
                                     title="Search and download new model from Hugging Face">
                                     📥 Download Model...
                                 </button>
+                                <button class="btn-unload-model" id="btn-unload-model"
+                                    title="Unload the active model to free resources" style="display: none;">
+                                    ❌ Unload Model
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -234,7 +238,10 @@
                         <polyline points="15 18 9 12 15 6"></polyline>
                     </svg>
                 </button>
-                <div class="header-title" id="header-title">New Chat</div>
+                <div class="header-title-container">
+                    <div class="header-title" id="header-title">New Chat</div>
+                    <button class="btn-star-header" id="btn-star-header" title="Star conversation" style="display: none;">☆</button>
+                </div>
                 <div class="header-actions">
                     <div class="header-status">
                         <div class="status-dot loading" id="status-dot"></div>
@@ -290,9 +297,6 @@
                 </div>
             </div>
 
-            <!-- Scroll-to-bottom button -->
-            <button class="btn-scroll-bottom" id="btn-scroll-bottom" title="Scroll to bottom">↓</button>
-
             <!-- Input area -->
             <div class="input-area">
                 <!-- Model Switcher Bar -->
@@ -312,6 +316,8 @@
                     </div>
                 </div>
                 <div class="input-container">
+                    <!-- Scroll-to-bottom button -->
+                    <button class="btn-scroll-bottom" id="btn-scroll-bottom" title="Scroll to bottom">↓</button>
                     <div class="input-wrapper">
                         <button class="btn-chat-upload" id="btn-chat-upload" title="Upload text file to prompt">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chat-upload-svg" style="width: 20px; height: 20px; display: block;">
