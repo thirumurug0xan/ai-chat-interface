@@ -345,6 +345,78 @@ def chat_sync():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/chat2", methods=["GET", "POST"])
+def chat2():
+    """
+    Simple curl-friendly endpoint.
+    Accepts GET /api/chat2?quirie=... or POST with 'quirie' param/JSON.
+    Returns plain text response (optionally streamed).
+    """
+    # Check query param 'quirie' or 'query'
+    query = request.args.get("quirie") or request.args.get("query")
+    
+    # If not in query params, check POST body
+    if not query and request.method == "POST":
+        if request.is_json:
+            data = request.get_json() or {}
+            query = data.get("quirie") or data.get("query")
+        else:
+            query = request.form.get("quirie") or request.form.get("query")
+
+    if not query:
+        return "Error: Missing parameter 'quirie'\n", 400
+
+    if not engine.is_loaded():
+        return "Error: Model is not loaded yet. Please wait.\n", 503
+
+    messages = [{"role": "user", "content": query}]
+
+    # Determine if streaming is requested (enabled by default)
+    stream_val = request.args.get("stream")
+    if stream_val is None and request.method == "POST":
+        if request.is_json:
+            data = request.get_json() or {}
+            stream_val = data.get("stream")
+        else:
+            stream_val = request.form.get("stream")
+            
+    if stream_val is None:
+        stream_param = True
+    else:
+        # Convert stream_val to boolean or equivalent string evaluation
+        if isinstance(stream_val, bool):
+            stream_param = stream_val
+        else:
+            stream_param = str(stream_val).lower() not in ("false", "0", "no")
+
+    if stream_param:
+        def stream_generator():
+            try:
+                for chunk in engine.generate_stream(messages):
+                    if isinstance(chunk, dict) and "__meta__" in chunk:
+                        continue
+                    yield chunk
+            except Exception as e:
+                yield f"\nError during generation: {str(e)}\n"
+                traceback.print_exc()
+
+        return Response(
+            stream_generator(),
+            mimetype="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            }
+        )
+    else:
+        try:
+            response = engine.generate(messages)
+            return Response(response, mimetype="text/plain")
+        except Exception as e:
+            traceback.print_exc()
+            return Response(f"Error: {str(e)}\n", mimetype="text/plain", status=500)
+
+
 @app.route("/api/fs/list", methods=["POST"])
 def fs_list():
     """
