@@ -142,11 +142,21 @@ def main():
             # Streaming response output
             print(f"{CLR_BOLD}{CLR_MAGENTA}🤖 Assistant: {CLR_RESET}", end="", flush=True)
             assistant_response = ""
+            meta = None
             
             for chunk in engine.generate_stream(history):
-                print(chunk, end="", flush=True)
-                assistant_response += chunk
+                if isinstance(chunk, dict) and "__meta__" in chunk:
+                    meta = chunk["__meta__"]
+                else:
+                    print(chunk, end="", flush=True)
+                    assistant_response += chunk
             print() # Print final newline after stream completes
+
+            if meta:
+                tokens = meta.get("tokens", 0)
+                elapsed = meta.get("elapsed_sec", 0.0)
+                tps = meta.get("tokens_per_sec", 0.0)
+                print(f"{CLR_YELLOW}⚡ [{tokens} tokens | {elapsed:.2f}s | {tps} tokens/sec]{CLR_RESET}")
 
             # Save response to history
             if assistant_response.strip():
