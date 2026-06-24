@@ -28,7 +28,27 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 engine = MultiModelManager()
 
 # ── RAG configuration and retrieval caching ──────────────────────────────────
-from rag_engine import BM25Retriever, retrieve_web_context
+import re
+from rag_engine import BM25Retriever, retrieve_web_context, scrape_website_text
+
+URL_PATTERN = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+')
+
+def detect_and_scrape_url(query):
+    """
+    Detects if a URL is in the query. If so, fetches the page text directly
+    instead of running a web search.
+    Returns (scraped_text, url_found) or (None, None).
+    """
+    match = URL_PATTERN.search(query)
+    if match:
+        url = match.group(0)
+        if url.startswith("www."):
+            url = "http://" + url
+        print(f"[URL DETECTED] Directly scraping URL: {url}")
+        scraped_text = scrape_website_text(url)
+        if scraped_text and not scraped_text.startswith("Error loading webpage:"):
+            return scraped_text, url
+    return None, None
 
 RAG_ENABLED = False
 WEB_SEARCH_ENABLED = False
@@ -391,20 +411,30 @@ def chat():
                     sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
             
             if is_web:
-                search_query = optimize_search_query(query)
-                web_results = retrieve_web_context(search_query)
-                if web_results:
-                    context_lines = []
-                    for w in web_results:
-                        context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
-                    context_str = "\n\n".join(context_lines)
+                scraped_text, scraped_url = detect_and_scrape_url(query)
+                if scraped_text:
                     context_block += (
-                        "[Context retrieved from Web Search]\n"
+                        f"[Context retrieved from directly visiting URL: {scraped_url}]\n"
                         "----------------------------------------\n"
-                        f"{context_str}\n"
+                        f"{scraped_text}\n"
                         "----------------------------------------\n\n"
                     )
-                    web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
+                    web_sources = [{"title": scraped_url, "url": scraped_url}]
+                else:
+                    search_query = optimize_search_query(query)
+                    web_results = retrieve_web_context(search_query)
+                    if web_results:
+                        context_lines = []
+                        for w in web_results:
+                            context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+                        context_str = "\n\n".join(context_lines)
+                        context_block += (
+                            "[Context retrieved from Web Search]\n"
+                            "----------------------------------------\n"
+                            f"{context_str}\n"
+                            "----------------------------------------\n\n"
+                        )
+                        web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
 
             if context_block:
                 context_block += (
@@ -504,20 +534,30 @@ def chat_sync():
                     sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
             
             if is_web:
-                search_query = optimize_search_query(query)
-                web_results = retrieve_web_context(search_query)
-                if web_results:
-                    context_lines = []
-                    for w in web_results:
-                        context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
-                    context_str = "\n\n".join(context_lines)
+                scraped_text, scraped_url = detect_and_scrape_url(query)
+                if scraped_text:
                     context_block += (
-                        "[Context retrieved from Web Search]\n"
+                        f"[Context retrieved from directly visiting URL: {scraped_url}]\n"
                         "----------------------------------------\n"
-                        f"{context_str}\n"
+                        f"{scraped_text}\n"
                         "----------------------------------------\n\n"
                     )
-                    web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
+                    web_sources = [{"title": scraped_url, "url": scraped_url}]
+                else:
+                    search_query = optimize_search_query(query)
+                    web_results = retrieve_web_context(search_query)
+                    if web_results:
+                        context_lines = []
+                        for w in web_results:
+                            context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+                        context_str = "\n\n".join(context_lines)
+                        context_block += (
+                            "[Context retrieved from Web Search]\n"
+                            "----------------------------------------\n"
+                            f"{context_str}\n"
+                            "----------------------------------------\n\n"
+                        )
+                        web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
 
             if context_block:
                 context_block += (
@@ -615,20 +655,30 @@ def chat2():
             sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
 
     if is_web:
-        search_query = optimize_search_query(query)
-        web_results = retrieve_web_context(search_query)
-        if web_results:
-            context_lines = []
-            for w in web_results:
-                context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
-            context_str = "\n\n".join(context_lines)
+        scraped_text, scraped_url = detect_and_scrape_url(query)
+        if scraped_text:
             context_block += (
-                "[Context retrieved from Web Search]\n"
+                f"[Context retrieved from directly visiting URL: {scraped_url}]\n"
                 "----------------------------------------\n"
-                f"{context_str}\n"
+                f"{scraped_text}\n"
                 "----------------------------------------\n\n"
             )
-            web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
+            web_sources = [{"title": scraped_url, "url": scraped_url}]
+        else:
+            search_query = optimize_search_query(query)
+            web_results = retrieve_web_context(search_query)
+            if web_results:
+                context_lines = []
+                for w in web_results:
+                    context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+                context_str = "\n\n".join(context_lines)
+                context_block += (
+                    "[Context retrieved from Web Search]\n"
+                    "----------------------------------------\n"
+                    f"{context_str}\n"
+                    "----------------------------------------\n\n"
+                )
+                web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
 
     if context_block:
         context_block += (
