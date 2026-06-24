@@ -54,6 +54,7 @@ RAG_ENABLED = False
 WEB_SEARCH_ENABLED = False
 CHAT2_ENABLED = True
 CHAT2_RAG_ENABLED = False
+THINKING_ENABLED = True
 _retriever_cache = {}
 
 def get_retriever():
@@ -184,6 +185,7 @@ def config():
     cfg["web_search_enabled"] = WEB_SEARCH_ENABLED
     cfg["chat2_enabled"] = CHAT2_ENABLED
     cfg["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
+    cfg["thinking_enabled"] = THINKING_ENABLED
     return jsonify(cfg)
 
 
@@ -257,7 +259,7 @@ def config_update():
 
     Returns updated config.
     """
-    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED
+    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED, THINKING_ENABLED
     data = request.get_json()
     if not data:
         return jsonify({"error": "Missing config data"}), 400
@@ -308,12 +310,16 @@ def config_update():
     if "chat2_rag_enabled" in data:
         CHAT2_RAG_ENABLED = bool(data["chat2_rag_enabled"])
 
+    if "thinking_enabled" in data:
+        THINKING_ENABLED = bool(data["thinking_enabled"])
+
     # Fetch fresh config
     res_config = engine.get_config()
     res_config["rag_enabled"] = RAG_ENABLED
     res_config["web_search_enabled"] = WEB_SEARCH_ENABLED
     res_config["chat2_enabled"] = CHAT2_ENABLED
     res_config["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
+    res_config["thinking_enabled"] = THINKING_ENABLED
     if device_changed and device_status:
         res_config["device_switch_result"] = device_status
 
@@ -379,9 +385,9 @@ def chat():
         messages_copy.append(dict(msg))
     messages = messages_copy
 
-    # Ensure system prompt guides the model to think
+    # Ensure system prompt guides the model to think (if enabled)
     has_system = any(m.get("role") == "system" for m in messages)
-    if not has_system:
+    if not has_system and THINKING_ENABLED:
         messages.insert(0, {
             "role": "system",
             "content": (
@@ -520,7 +526,7 @@ def chat_sync():
 
     messages = [dict(msg) for msg in messages]
     has_system = any(m.get("role") == "system" for m in messages)
-    if not has_system:
+    if not has_system and THINKING_ENABLED:
         messages.insert(0, {
             "role": "system",
             "content": (
@@ -714,17 +720,17 @@ def chat2():
         )
         query = context_block + query
 
-    messages = [
-        {
+    messages = []
+    if THINKING_ENABLED:
+        messages.append({
             "role": "system",
             "content": (
                 "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
                 "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
                 "After the </think> tag, output your final response."
             )
-        },
-        {"role": "user", "content": query}
-    ]
+        })
+    messages.append({"role": "user", "content": query})
 
     # Determine if streaming is requested (enabled by default)
     stream_val = request.args.get("stream")
