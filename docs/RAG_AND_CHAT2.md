@@ -101,10 +101,13 @@ curl -X POST "http://localhost:5000/api/chat2" \
 
 ## 3. ⚙️ Web UI Configuration Settings
 
-Two configuration checkboxes are exposed in the **Inference Settings** panel (represented by the ⚙️ gear icon in the workstation header):
+Three configuration checkboxes are exposed in the **Inference Settings** panel (represented by the ⚙️ gear icon in the workstation header):
 
-1. **Enable /api/chat2 Endpoint**
+1. **Enable Model Thinking Process**
+   * **Purpose**: Instructs models (including standard models like Phi-4 or Qwen-2.5) to write out their internal chain of thought inside `<think>...</think>` blocks, which are parsed by the UI into collapsible containers.
+   * **Performance note**: Generating thinking tokens takes extra time. Unchecking this setting disables chain-of-thought generation and speeds up response times significantly.
+2. **Enable /api/chat2 Endpoint**
    * If unchecked, requests to `/api/chat2` are rejected immediately with a `403 Forbidden` error.
-2. **Enable Default RAG for /api/chat2**
+3. **Enable Default RAG for /api/chat2**
    * Configures whether the `/api/chat2` endpoint triggers notes retrieval by default when no explicit override parameter is passed.
    * **UX Dependency**: When the endpoint is disabled, this setting is visually dimmed, locked, and user-interactions are temporarily blocked to reflect the config dependency.

@@ -20,6 +20,7 @@ const state = {
     webSearchEnabled: false,    // Track Web Search toggle state
     chat2Enabled: true,         // Track chat2 endpoint enabled state
     chat2RagEnabled: true,      // Track chat2 default RAG enabled state
+    thinkingEnabled: true,      // Track if model thinking process is enabled
 };
 
 const fsState = {
@@ -146,6 +147,7 @@ const dom = {
     settingMaxInputTokensVal: $("#setting-max-input-tokens-val"),
     settingRagEnabled: $("#setting-rag-enabled"),
     settingWebSearchEnabled: $("#setting-web-search-enabled"),
+    settingThinkingEnabled: $("#setting-thinking-enabled"),
     settingChat2Enabled: $("#setting-chat2-enabled"),
     settingChat2RagContainer: $("#setting-chat2-rag-container"),
     settingChat2RagEnabled: $("#setting-chat2-rag-enabled"),
@@ -1224,6 +1226,9 @@ async function fetchConfig() {
         // Store chat2 settings
         state.chat2Enabled = !!data.chat2_enabled;
         state.chat2RagEnabled = !!data.chat2_rag_enabled;
+
+        // Store thinking setting
+        state.thinkingEnabled = !!data.thinking_enabled;
 
         // Update model switcher label
         updateModelSwitcherLabel();
@@ -2923,6 +2928,9 @@ function openSettingsModal() {
         if (dom.settingWebSearchEnabled) {
             dom.settingWebSearchEnabled.checked = !!state.webSearchEnabled;
         }
+        if (dom.settingThinkingEnabled) {
+            dom.settingThinkingEnabled.checked = !!state.thinkingEnabled;
+        }
         if (dom.settingChat2Enabled) {
             dom.settingChat2Enabled.checked = !!state.chat2Enabled;
         }
@@ -2957,6 +2965,7 @@ async function saveSettings() {
     const newMaxInputTokens = parseInt(dom.settingMaxInputTokens.value, 10);
     const newRagEnabled = dom.settingRagEnabled ? dom.settingRagEnabled.checked : false;
     const newWebSearchEnabled = dom.settingWebSearchEnabled ? dom.settingWebSearchEnabled.checked : false;
+    const newThinkingEnabled = dom.settingThinkingEnabled ? dom.settingThinkingEnabled.checked : true;
     const newChat2Enabled = dom.settingChat2Enabled ? dom.settingChat2Enabled.checked : false;
     const newChat2RagEnabled = dom.settingChat2RagEnabled ? dom.settingChat2RagEnabled.checked : false;
 
@@ -2986,6 +2995,7 @@ async function saveSettings() {
                 max_input_tokens: newMaxInputTokens,
                 rag_enabled: newRagEnabled,
                 web_search_enabled: newWebSearchEnabled,
+                thinking_enabled: newThinkingEnabled,
                 chat2_enabled: newChat2Enabled,
                 chat2_rag_enabled: newChat2RagEnabled
             }),
@@ -3020,6 +3030,7 @@ async function saveSettings() {
         updateWebSearchUI();
         state.chat2Enabled = !!data.chat2_enabled;
         state.chat2RagEnabled = !!data.chat2_rag_enabled;
+        state.thinkingEnabled = !!data.thinking_enabled;
         saveState();
 
         const friendly = data.device_friendly || data.device || newDevice;
