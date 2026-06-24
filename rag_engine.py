@@ -268,3 +268,59 @@ def retrieve_web_context(query, top_k=3):
     except Exception as e:
         print(f"[RAG WEB ERROR] Live search failed: {e}")
         return []
+
+class WebPageTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.text_content = []
+        self.ignore_tags = {"script", "style", "head", "title", "meta", "noscript", "svg", "button", "nav", "footer"}
+        self.current_tag_stack = []
+
+    def handle_starttag(self, tag, attrs):
+        self.current_tag_stack.append(tag.lower())
+
+    def handle_endtag(self, tag):
+        if self.current_tag_stack:
+            self.current_tag_stack.pop()
+
+    def handle_data(self, data):
+        if any(ignored in self.current_tag_stack for ignored in self.ignore_tags):
+            return
+        text = data.strip()
+        if text:
+            text = " ".join(text.split())
+            self.text_content.append(text)
+
+    def get_text(self):
+        lines = []
+        seen = set()
+        for line in self.text_content:
+            if len(line) < 3:
+                continue
+            if len(line) < 50:
+                if line in seen:
+                    continue
+                seen.add(line)
+            lines.append(line)
+        return "\n".join(lines)
+
+def scrape_website_text(url, max_chars=8000):
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html_data = response.read().decode("utf-8", errors="ignore")
+            parser = WebPageTextParser()
+            parser.feed(html_data)
+            text = parser.get_text()
+            if len(text) > max_chars:
+                text = text[:max_chars] + "\n\n[Content truncated...]"
+            return text
+    except Exception as e:
+        print(f"[SCRAPE ERROR] Failed to fetch url {url}: {e}")
+        return f"Error loading webpage: {str(e)}"
+
