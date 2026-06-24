@@ -53,6 +53,35 @@ def retrieve_notes_context(query, top_k=3):
         traceback.print_exc()
         return []
 
+def optimize_search_query(query):
+    """
+    Extract essential search engine keywords from a user query using the loaded model.
+    Only runs if query is long (more than 4 words) to save performance.
+    """
+    if not query:
+        return ""
+    if len(query.split()) <= 4:
+        return query
+        
+    if not engine.is_loaded():
+        return query
+
+    try:
+        search_prompt_history = [
+            {"role": "system", "content": "You are a search query optimizer. Given the user's request, extract only the essential search engine keywords. Do not output any explanation or extra text. Output only the query words."},
+            {"role": "user", "content": f"Generate a short, concise search engine query for: {query}"}
+        ]
+        optimized = engine.generate(search_prompt_history)
+        if optimized:
+            cleaned = optimized.strip().replace('"', '').replace("'", "").replace("\n", " ").replace("\r", " ")
+            if len(cleaned.strip()) > 0:
+                print(f"[SEARCH OPTIMIZATION] Optimized query: '{query}' -> '{cleaned.strip()}'")
+                return cleaned.strip()
+    except Exception as e:
+        print(f"Error optimizing search query: {e}")
+        
+    return query
+
 # Global dictionary to track Hugging Face model export and download processes
 active_downloads = {}
 
@@ -362,7 +391,8 @@ def chat():
                     sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
             
             if is_web:
-                web_results = retrieve_web_context(query)
+                search_query = optimize_search_query(query)
+                web_results = retrieve_web_context(search_query)
                 if web_results:
                     context_lines = []
                     for w in web_results:
@@ -474,7 +504,8 @@ def chat_sync():
                     sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
             
             if is_web:
-                web_results = retrieve_web_context(query)
+                search_query = optimize_search_query(query)
+                web_results = retrieve_web_context(search_query)
                 if web_results:
                     context_lines = []
                     for w in web_results:
@@ -584,7 +615,8 @@ def chat2():
             sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
 
     if is_web:
-        web_results = retrieve_web_context(query)
+        search_query = optimize_search_query(query)
+        web_results = retrieve_web_context(search_query)
         if web_results:
             context_lines = []
             for w in web_results:
