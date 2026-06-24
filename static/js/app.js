@@ -1416,7 +1416,7 @@ async function generateResponse(conv) {
                             firstChunk = false;
                         }
                         fullResponse += parsed.chunk;
-                        contentEl.innerHTML = renderMarkdown(fullResponse) + '<span class="typing-cursor"></span>';
+                        contentEl.innerHTML = renderMessageHtml(fullResponse) + '<span class="typing-cursor"></span>';
                         if (typeof Prism !== 'undefined') {
                             Prism.highlightAllUnder(contentEl);
                         }
@@ -1444,7 +1444,7 @@ async function generateResponse(conv) {
             contentEl.innerHTML = `<p style="color: #a0a0a0; font-style: italic;">No response generated. Try rephrasing your message.</p>`;
         } else {
             // Final render with proper markdown
-            contentEl.innerHTML = renderMarkdown(fullResponse);
+            contentEl.innerHTML = renderMessageHtml(fullResponse);
             attachCodeCopyButtons(contentEl);
             if (typeof Prism !== 'undefined') {
                 Prism.highlightAllUnder(contentEl);
@@ -1461,7 +1461,7 @@ async function generateResponse(conv) {
         if (err.name === "AbortError") {
             assistantMsg.content = fullResponse || "(Generation stopped)";
             contentEl.innerHTML = fullResponse
-                ? renderMarkdown(fullResponse) + `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`
+                ? renderMessageHtml(fullResponse) + `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`
                 : `<p style="color: #a0a0a0; font-style: italic;">⏹ Generation stopped.</p>`;
             attachCodeCopyButtons(contentEl);
             if (typeof Prism !== 'undefined') {
@@ -1760,7 +1760,7 @@ function appendMessageToDOM(msg, animate = true) {
             <span class="message-sender">${escapeHtml(senderName)}</span>
             <span class="message-time">${time}</span>
         </div>
-        <div class="message-content">${msg.content ? renderMarkdown(msg.content) : ""}</div>
+        <div class="message-content">${msg.content ? renderMessageHtml(msg.content) : ""}</div>
         <div class="message-actions">
             ${actionsHtml}
         </div>
@@ -1884,6 +1884,65 @@ function renderMarkdown(text) {
         }
     }
     return renderMarkdownFallback(text);
+}
+
+window.toggleReasoningBlock = function(headerEl) {
+    const block = headerEl.closest('.reasoning-block');
+    if (block) {
+        block.classList.toggle('collapsed');
+    }
+};
+
+function parseThinkingAndContent(text) {
+    if (!text) return { thinking: "", content: "" };
+
+    const thinkStartIdx = text.indexOf("<think>");
+    if (thinkStartIdx === -1) {
+        return { thinking: "", content: text };
+    }
+
+    const thinkEndIdx = text.indexOf("</think>");
+    if (thinkEndIdx === -1) {
+        // Thinking is still open
+        const thinkingText = text.substring(thinkStartIdx + 7);
+        return { thinking: thinkingText, content: "", isThinkingActive: true };
+    } else {
+        // Thinking is closed
+        const thinkingText = text.substring(thinkStartIdx + 7, thinkEndIdx);
+        const contentText = text.substring(thinkEndIdx + 8);
+        return { thinking: thinkingText, content: contentText, isThinkingActive: false };
+    }
+}
+
+function renderMessageHtml(text) {
+    const { thinking, content, isThinkingActive } = parseThinkingAndContent(text);
+    let html = "";
+
+    if (thinking) {
+        const thinkingHtml = renderMarkdown(thinking);
+        const statusText = isThinkingActive ? "Thinking..." : "Thought Process";
+        const collapseClass = isThinkingActive ? "" : "collapsed"; // keep open when active, can collapse later
+        const brainIcon = isThinkingActive ? "🧠⚡" : "🧠";
+        
+        html += `
+        <div class="reasoning-block ${collapseClass}">
+            <div class="reasoning-header" onclick="toggleReasoningBlock(this)">
+                <span class="reasoning-title-icon">${brainIcon}</span>
+                <span class="reasoning-title-text">${statusText}</span>
+                <span class="reasoning-arrow">▼</span>
+            </div>
+            <div class="reasoning-content">
+                ${thinkingHtml}
+            </div>
+        </div>
+        `;
+    }
+
+    if (content || !thinking) {
+        html += `<div class="response-content">${renderMarkdown(content || (!thinking ? text : ""))}</div>`;
+    }
+
+    return html;
 }
 
 function renderMarkdownFallback(text) {
