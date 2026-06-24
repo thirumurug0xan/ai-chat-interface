@@ -5816,6 +5816,10 @@ body {
 }
 
 .response-content {
+    margin-top: 0;
+}
+
+.reasoning-block + .response-content {
     margin-top: 12px;
 }
 
