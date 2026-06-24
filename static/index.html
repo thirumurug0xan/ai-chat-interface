@@ -335,6 +335,14 @@
                             <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> new line · <kbd>Ctrl+N</kbd> new chat
                         </div>
                         <div class="input-footer-right">
+                            <div class="rag-window" id="rag-window" title="Retrieve relevant info from Mousepad Notes (Local RAG)">
+                                <span class="rag-icon">📚</span>
+                                <span class="rag-label" id="rag-label">RAG: Off</span>
+                            </div>
+                            <div class="rag-window" id="web-search-window" title="Perform live search query for Web context (Web RAG)">
+                                <span class="rag-icon">🌐</span>
+                                <span class="rag-label" id="web-search-label">Web: Off</span>
+                            </div>
                             <div class="context-window" id="context-window" title="Click for context details">
                                 <div class="context-icon">🧠</div>
                                 <div class="context-bar-track">
@@ -481,6 +489,38 @@
                             <button class="preset-btn" type="button" data-value="128000">128K</button>
                         </div>
                         <div class="context-warning-alert hidden" id="settings-context-warning"></div>
+                    </div>
+
+                    <div class="setting-item">
+                        <label class="setting-label-bold" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="setting-rag-enabled" style="width: 18px; height: 18px; cursor: pointer; margin: 0;">
+                            <span>Enable Local RAG (Mousepad Notes)</span>
+                        </label>
+                        <div class="setting-description">When enabled, the chat agent will search your active Mousepad Notes directory and retrieve relevant context based on your query.</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <label class="setting-label-bold" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="setting-web-search-enabled" style="width: 18px; height: 18px; cursor: pointer; margin: 0;">
+                            <span>Enable Web RAG (Live Search)</span>
+                        </label>
+                        <div class="setting-description">When enabled, the chat agent will perform live search queries on the internet using DuckDuckGo to answer questions with real-time web context.</div>
+                    </div>
+
+                    <div class="setting-item">
+                        <label class="setting-label-bold" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="setting-chat2-enabled" style="width: 18px; height: 18px; cursor: pointer; margin: 0;">
+                            <span>Enable /api/chat2 Endpoint</span>
+                        </label>
+                        <div class="setting-description">Enable or disable the secondary chat endpoint (/api/chat2) for external API integration.</div>
+                    </div>
+
+                    <div class="setting-item" id="setting-chat2-rag-container" style="transition: opacity 0.2s ease;">
+                        <label class="setting-label-bold" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="setting-chat2-rag-enabled" style="width: 18px; height: 18px; cursor: pointer; margin: 0;">
+                            <span>Enable Default RAG for /api/chat2</span>
+                        </label>
+                        <div class="setting-description">When enabled, requests to the /api/chat2 endpoint will use RAG (local notes retrieval) by default unless overridden.</div>
                     </div>
                 </div>
             </div>

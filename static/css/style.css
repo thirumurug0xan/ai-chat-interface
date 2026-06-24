@@ -5644,4 +5644,97 @@ body {
     background: rgba(255, 165, 2, 0.1);
 }
 
+/* ── RAG UI Styles ─────────────────────────────────────────────────────────── */
+.rag-window {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
+    position: relative;
+    user-select: none;
+}
+
+.rag-window:hover {
+    background: var(--bg-glass-strong);
+    border-color: var(--border-medium);
+}
+
+.rag-window.active {
+    background: rgba(0, 206, 201, 0.1);
+    border-color: var(--accent-2);
+    box-shadow: 0 0 8px rgba(0, 206, 201, 0.15);
+}
+
+.rag-window.active .rag-label {
+    color: var(--accent-2);
+    font-weight: 600;
+}
+
+.rag-icon {
+    font-size: 12px;
+    transition: transform var(--transition-fast);
+}
+
+.rag-window:hover .rag-icon {
+    transform: scale(1.15);
+}
+
+.rag-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+/* RAG Sources Styles inside Message Stats */
+.source-tag {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.source-tag:hover {
+    background: rgba(0, 206, 201, 0.15);
+    border-color: rgba(0, 206, 201, 0.3);
+    color: var(--text-primary);
+}
+
+.source-icon {
+    font-size: 9px;
+}
+
+/* Web RAG Sources Styles inside Message Stats */
+.web-source-tag {
+    background: rgba(0, 206, 201, 0.04);
+    border: 1px solid rgba(0, 206, 201, 0.08);
+    color: var(--accent-2);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+    transition: all var(--transition-fast);
+}
+
+.web-source-tag:hover {
+    background: rgba(0, 206, 201, 0.15);
+    border-color: rgba(0, 206, 201, 0.3);
+    color: var(--text-primary);
+}
+
 

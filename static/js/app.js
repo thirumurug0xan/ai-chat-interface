@@ -16,6 +16,10 @@ const state = {
     maxInputTokens: 1024,       // context window size from config
     currentUsedTokens: 0,       // Track current used tokens
     systemStats: null,          // Real-time system specs
+    ragEnabled: false,          // Track RAG toggle state
+    webSearchEnabled: false,    // Track Web Search toggle state
+    chat2Enabled: true,         // Track chat2 endpoint enabled state
+    chat2RagEnabled: true,      // Track chat2 default RAG enabled state
 };
 
 const fsState = {
@@ -140,6 +144,15 @@ const dom = {
     settingMaxNewTokensVal: $("#setting-max-new-tokens-val"),
     settingMaxInputTokens: $("#setting-max-input-tokens"),
     settingMaxInputTokensVal: $("#setting-max-input-tokens-val"),
+    settingRagEnabled: $("#setting-rag-enabled"),
+    settingWebSearchEnabled: $("#setting-web-search-enabled"),
+    settingChat2Enabled: $("#setting-chat2-enabled"),
+    settingChat2RagContainer: $("#setting-chat2-rag-container"),
+    settingChat2RagEnabled: $("#setting-chat2-rag-enabled"),
+    ragWindow: $("#rag-window"),
+    ragLabel: $("#rag-label"),
+    webSearchWindow: $("#web-search-window"),
+    webSearchLabel: $("#web-search-label"),
     btnSaveSettings: $("#btn-save-settings"),
     // Device switching
     deviceSwitchingOverlay: $("#device-switching-overlay"),
@@ -603,6 +616,66 @@ function initEventListeners() {
     // Settings save button
     if (dom.btnSaveSettings) {
         dom.btnSaveSettings.addEventListener("click", saveSettings);
+    }
+
+    if (dom.settingChat2Enabled) {
+        dom.settingChat2Enabled.addEventListener("change", updateChat2SettingsUI);
+    }
+
+    // RAG footer toggle button
+    if (dom.ragWindow) {
+        dom.ragWindow.addEventListener("click", async () => {
+            if (state.isGenerating) {
+                showToast("Cannot toggle RAG settings while generating. Please wait.", "error");
+                return;
+            }
+            state.ragEnabled = !state.ragEnabled;
+            updateRagUI();
+            try {
+                const res = await fetch("/api/config/update", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        rag_enabled: state.ragEnabled
+                    }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    state.modelConfig = data;
+                    showToast(state.ragEnabled ? "Local Notes RAG enabled" : "Local Notes RAG disabled", "success");
+                }
+            } catch (err) {
+                console.error("Failed to sync RAG state:", err);
+            }
+        });
+    }
+
+    // Web Search footer toggle button
+    if (dom.webSearchWindow) {
+        dom.webSearchWindow.addEventListener("click", async () => {
+            if (state.isGenerating) {
+                showToast("Cannot toggle Web search while generating. Please wait.", "error");
+                return;
+            }
+            state.webSearchEnabled = !state.webSearchEnabled;
+            updateWebSearchUI();
+            try {
+                const res = await fetch("/api/config/update", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        web_search_enabled: state.webSearchEnabled
+                    }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    state.modelConfig = data;
+                    showToast(state.webSearchEnabled ? "Web Search RAG enabled" : "Web Search RAG disabled", "success");
+                }
+            } catch (err) {
+                console.error("Failed to sync Web search state:", err);
+            }
+        });
     }
 
     // Close context popup on outside click
@@ -1140,12 +1213,61 @@ async function fetchConfig() {
             updateContextWindowUI(0, state.maxInputTokens);
         }
 
+        // Store RAG toggle state
+        state.ragEnabled = !!data.rag_enabled;
+        updateRagUI();
+
+        // Store Web Search toggle state
+        state.webSearchEnabled = !!data.web_search_enabled;
+        updateWebSearchUI();
+
+        // Store chat2 settings
+        state.chat2Enabled = !!data.chat2_enabled;
+        state.chat2RagEnabled = !!data.chat2_rag_enabled;
+
         // Update model switcher label
         updateModelSwitcherLabel();
     } catch (err) {
         setStatus("error", "Disconnected");
         dom.modelStatus.textContent = "Error";
         console.error("Failed to fetch config:", err);
+    }
+}
+
+function updateRagUI() {
+    if (state.ragEnabled) {
+        if (dom.ragWindow) dom.ragWindow.classList.add("active");
+        if (dom.ragLabel) dom.ragLabel.textContent = "RAG: On";
+        if (dom.settingRagEnabled) dom.settingRagEnabled.checked = true;
+    } else {
+        if (dom.ragWindow) dom.ragWindow.classList.remove("active");
+        if (dom.ragLabel) dom.ragLabel.textContent = "RAG: Off";
+        if (dom.settingRagEnabled) dom.settingRagEnabled.checked = false;
+    }
+}
+
+function updateWebSearchUI() {
+    if (state.webSearchEnabled) {
+        if (dom.webSearchWindow) dom.webSearchWindow.classList.add("active");
+        if (dom.webSearchLabel) dom.webSearchLabel.textContent = "Web: On";
+        if (dom.settingWebSearchEnabled) dom.settingWebSearchEnabled.checked = true;
+    } else {
+        if (dom.webSearchWindow) dom.webSearchWindow.classList.remove("active");
+        if (dom.webSearchLabel) dom.webSearchLabel.textContent = "Web: Off";
+        if (dom.settingWebSearchEnabled) dom.settingWebSearchEnabled.checked = false;
+    }
+}
+
+function updateChat2SettingsUI() {
+    if (!dom.settingChat2Enabled || !dom.settingChat2RagEnabled || !dom.settingChat2RagContainer) return;
+    const isEnabled = dom.settingChat2Enabled.checked;
+    dom.settingChat2RagEnabled.disabled = !isEnabled;
+    if (isEnabled) {
+        dom.settingChat2RagContainer.style.opacity = "1";
+        dom.settingChat2RagContainer.style.pointerEvents = "auto";
+    } else {
+        dom.settingChat2RagContainer.style.opacity = "0.5";
+        dom.settingChat2RagContainer.style.pointerEvents = "none";
     }
 }
 
@@ -1238,7 +1360,12 @@ async function generateResponse(conv) {
         const res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: apiMessages, max_tokens: state.maxTokens }),
+            body: JSON.stringify({
+                messages: apiMessages,
+                max_tokens: state.maxTokens,
+                rag_enabled: state.ragEnabled,
+                web_search_enabled: state.webSearchEnabled
+            }),
             signal: state.abortController.signal,
         });
 
@@ -1277,9 +1404,9 @@ async function generateResponse(conv) {
                         throw new Error(parsed.error);
                     }
 
-                    // Capture generation metadata (tokens/sec etc.)
+                    // Capture generation metadata (tokens/sec, sources, etc.)
                     if (parsed.meta) {
-                        generationMeta = parsed.meta;
+                        generationMeta = { ...generationMeta, ...parsed.meta };
                         continue;
                     }
 
@@ -1380,6 +1507,34 @@ function renderMessageStats(msgEl, meta) {
         <span class="stats-separator">·</span>
         <span class="stats-item" title="Generation time">${elapsed}s</span>
     `;
+
+    if (meta.sources && meta.sources.length > 0) {
+        const sourcesHtml = meta.sources.map(src => {
+            return `<span class="source-tag" title="BM25 Score: ${src.score.toFixed(2)}" onclick="openNoteFromSource('${escapeHtml(src.filename)}')"><span class="source-icon">📄</span> ${escapeHtml(src.filename)}</span>`;
+        }).join(" ");
+        
+        statsDiv.innerHTML += `
+            <span class="stats-separator">·</span>
+            <span class="sources-list-container" style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                <span style="font-size: 10px; color: var(--text-tertiary); margin-right: 2px;">Sources:</span>
+                ${sourcesHtml}
+            </span>
+        `;
+    }
+
+    if (meta.web_sources && meta.web_sources.length > 0) {
+        const webSourcesHtml = meta.web_sources.map(src => {
+            return `<a href="${escapeHtml(src.url)}" target="_blank" rel="noopener noreferrer" class="web-source-tag" title="${escapeHtml(src.title)}"><span class="source-icon">🌐</span> ${escapeHtml(src.title)}</a>`;
+        }).join(" ");
+        
+        statsDiv.innerHTML += `
+            <span class="stats-separator">·</span>
+            <span class="web-sources-list-container" style="display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                <span style="font-size: 10px; color: var(--text-tertiary); margin-right: 2px;">Web:</span>
+                ${webSourcesHtml}
+            </span>
+        `;
+    }
 
     // Insert after message-content, before message-actions
     const actionsEl = msgEl.querySelector(".message-actions");
@@ -2703,6 +2858,19 @@ function openSettingsModal() {
             // Update active preset button styling
             dom.settingMaxInputTokens.dispatchEvent(new Event("input"));
         }
+        if (dom.settingRagEnabled) {
+            dom.settingRagEnabled.checked = !!state.ragEnabled;
+        }
+        if (dom.settingWebSearchEnabled) {
+            dom.settingWebSearchEnabled.checked = !!state.webSearchEnabled;
+        }
+        if (dom.settingChat2Enabled) {
+            dom.settingChat2Enabled.checked = !!state.chat2Enabled;
+        }
+        if (dom.settingChat2RagEnabled) {
+            dom.settingChat2RagEnabled.checked = !!state.chat2RagEnabled;
+        }
+        updateChat2SettingsUI();
         // update select option disabled states
         const friendly = state.modelConfig.device_friendly || state.modelConfig.device || "—";
         updateDeviceSelectorUI(state.modelConfig.requested_device || "AUTO", friendly, state.modelConfig.available_devices);
@@ -2728,6 +2896,10 @@ async function saveSettings() {
     const newDevice = dom.settingDevice.value.toUpperCase();
     const newMaxNewTokens = parseInt(dom.settingMaxNewTokens.value, 10);
     const newMaxInputTokens = parseInt(dom.settingMaxInputTokens.value, 10);
+    const newRagEnabled = dom.settingRagEnabled ? dom.settingRagEnabled.checked : false;
+    const newWebSearchEnabled = dom.settingWebSearchEnabled ? dom.settingWebSearchEnabled.checked : false;
+    const newChat2Enabled = dom.settingChat2Enabled ? dom.settingChat2Enabled.checked : false;
+    const newChat2RagEnabled = dom.settingChat2RagEnabled ? dom.settingChat2RagEnabled.checked : false;
 
     const currentDevice = (state.modelConfig?.requested_device || "").toUpperCase();
     const deviceChanged = newDevice !== currentDevice;
@@ -2752,7 +2924,11 @@ async function saveSettings() {
             body: JSON.stringify({
                 device: newDevice,
                 max_new_tokens: newMaxNewTokens,
-                max_input_tokens: newMaxInputTokens
+                max_input_tokens: newMaxInputTokens,
+                rag_enabled: newRagEnabled,
+                web_search_enabled: newWebSearchEnabled,
+                chat2_enabled: newChat2Enabled,
+                chat2_rag_enabled: newChat2RagEnabled
             }),
         });
 
@@ -2779,6 +2955,12 @@ async function saveSettings() {
         state.modelConfig = data;
         state.maxTokens = data.max_new_tokens;
         state.maxInputTokens = data.effective_max_input_tokens || data.max_input_tokens;
+        state.ragEnabled = !!data.rag_enabled;
+        updateRagUI();
+        state.webSearchEnabled = !!data.web_search_enabled;
+        updateWebSearchUI();
+        state.chat2Enabled = !!data.chat2_enabled;
+        state.chat2RagEnabled = !!data.chat2_rag_enabled;
         saveState();
 
         const friendly = data.device_friendly || data.device || newDevice;
@@ -4545,6 +4727,15 @@ function renderNotesList(filterQuery = "") {
 
 async function loadNote(filename) {
     await openNoteInTab(filename);
+}
+
+async function openNoteFromSource(filename) {
+    try {
+        await openNotesModal();
+        await openNoteInTab(filename);
+    } catch (err) {
+        console.error("Failed to open note from RAG source link:", err);
+    }
 }
 
 async function openNoteInTab(filename) {
