@@ -371,10 +371,25 @@ def chat():
     if not messages:
         return jsonify({"error": "Messages list is empty"}), 400
 
-    # Validate message format
+    # Validate message format and copy
+    messages_copy = []
     for msg in messages:
         if "role" not in msg or "content" not in msg:
             return jsonify({"error": "Each message must have 'role' and 'content'"}), 400
+        messages_copy.append(dict(msg))
+    messages = messages_copy
+
+    # Ensure system prompt guides the model to think
+    has_system = any(m.get("role") == "system" for m in messages)
+    if not has_system:
+        messages.insert(0, {
+            "role": "system",
+            "content": (
+                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
+                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
+                "After the </think> tag, output your final response."
+            )
+        })
 
     if not engine.is_loaded():
         return jsonify({"error": "Model is not loaded yet. Please wait."}), 503
@@ -389,7 +404,6 @@ def chat():
     web_sources = []
 
     if (is_rag or is_web) and messages:
-        messages = [dict(msg) for msg in messages]
         latest_msg = messages[-1]
         if latest_msg["role"] == "user":
             query = latest_msg["content"]
@@ -501,6 +515,20 @@ def chat_sync():
         return jsonify({"error": "Missing 'messages' in request body"}), 400
 
     messages = data["messages"]
+    if not messages:
+        return jsonify({"error": "Messages list is empty"}), 400
+
+    messages = [dict(msg) for msg in messages]
+    has_system = any(m.get("role") == "system" for m in messages)
+    if not has_system:
+        messages.insert(0, {
+            "role": "system",
+            "content": (
+                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
+                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
+                "After the </think> tag, output your final response."
+            )
+        })
 
     if not engine.is_loaded():
         return jsonify({"error": "Model is not loaded yet. Please wait."}), 503
@@ -512,7 +540,6 @@ def chat_sync():
     web_sources = []
 
     if (is_rag or is_web) and messages:
-        messages = [dict(msg) for msg in messages]
         latest_msg = messages[-1]
         if latest_msg["role"] == "user":
             query = latest_msg["content"]
@@ -687,7 +714,17 @@ def chat2():
         )
         query = context_block + query
 
-    messages = [{"role": "user", "content": query}]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
+                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
+                "After the </think> tag, output your final response."
+            )
+        },
+        {"role": "user", "content": query}
+    ]
 
     # Determine if streaming is requested (enabled by default)
     stream_val = request.args.get("stream")
