@@ -105,7 +105,7 @@ Three configuration checkboxes are exposed in the **Inference Settings** panel (
 
 1. **Enable Model Thinking Process**
    * **Purpose**: Instructs models (including standard models like Phi-4 or Qwen-2.5) to write out their internal chain of thought inside `<think>...</think>` blocks, which are parsed by the UI into collapsible containers.
-   * **Performance note**: Generating thinking tokens takes extra time. Unchecking this setting disables chain-of-thought generation and speeds up response times significantly.
+   * **Performance note**: Generating thinking tokens takes extra time. *This setting is disabled by default to optimize local response speeds.* Unchecking this setting disables chain-of-thought generation and speeds up response times significantly.
 2. **Enable /api/chat2 Endpoint**
    * If unchecked, requests to `/api/chat2` are rejected immediately with a `403 Forbidden` error.
 3. **Enable Default RAG for /api/chat2**

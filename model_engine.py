@@ -104,6 +104,12 @@ class ModelEngine:
             if perf_hint:
                 self.ov_config["PERFORMANCE_HINT"] = perf_hint
 
+        # Apply KV cache precision from env if not already specified in ov_config
+        if "KV_CACHE_PRECISION" not in self.ov_config:
+            kv_prec = os.getenv("OV_KV_CACHE_PRECISION", "u8").strip()
+            if kv_prec and kv_prec.upper() != "DEFAULT":
+                self.ov_config["KV_CACHE_PRECISION"] = kv_prec
+
         self._last_load_warnings = []   # Warnings from the last load operation
 
     @property
@@ -381,6 +387,12 @@ class ModelEngine:
                         perf_hint = os.getenv("OV_PERFORMANCE_HINT", "LATENCY").strip()
                         if perf_hint:
                             self.ov_config["PERFORMANCE_HINT"] = perf_hint
+
+                # Apply KV cache precision from env if not already specified in ov_config
+                if "KV_CACHE_PRECISION" not in self.ov_config:
+                    kv_prec = os.getenv("OV_KV_CACHE_PRECISION", "u8").strip()
+                    if kv_prec and kv_prec.upper() != "DEFAULT":
+                        self.ov_config["KV_CACHE_PRECISION"] = kv_prec
                 
                 try:
                     self.load()
