@@ -20,7 +20,7 @@ const state = {
     webSearchEnabled: false,    // Track Web Search toggle state
     chat2Enabled: true,         // Track chat2 endpoint enabled state
     chat2RagEnabled: true,      // Track chat2 default RAG enabled state
-    thinkingEnabled: true,      // Track if model thinking process is enabled
+    thinkingEnabled: false,      // Track if model thinking process is enabled
 };
 
 const fsState = {

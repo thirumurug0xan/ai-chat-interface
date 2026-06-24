@@ -93,11 +93,33 @@ Open **http://localhost:5000** in your browser.
 | `/` | GET | Serves the main workstation UI |
 | `/api/config` | GET | Returns active model configuration |
 | `/api/chat` | POST | SSE chat inference stream |
+| `/api/chat2` | GET/POST | Simple curl-friendly endpoint (streaming/sync, optional RAG) |
 | `/api/fs/list` | POST | Directory tree filesystem lister |
 | `/api/model/switch` | POST | Switches model path with custom overrides |
 | `/api/models/download` | POST | Triggers HF optimum-cli export background task |
 | `/api/models/download/status` | GET | Fetches all model export tasks |
 | `/api/notes/list` | GET | Lists files inside the note directory |
+
+---
+
+## 🎛️ New Workspace Capabilities
+
+### 1. 📚 Dual RAG Framework & Direct URL Web Scraper
+* **Local Notes RAG**: Queries your active server notes directory dynamically using a native BM25 search algorithm.
+* **Web RAG**: Performs duckduckgo search query keyword optimization (using the loaded model) to fetch real-time search context.
+* **Direct URL Scraper**: If a URL is detected inside the user prompt, the system directly scrapes the webpage text content, bypassing searches.
+
+### 2. 🔌 Simple Chat API `/api/chat2`
+A terminal-friendly chat entry point designed for curl scripting:
+* Supports both `GET` (query-string parameters) and `POST` (JSON/Form-urlencoded).
+* Configurable settings via UI to toggle endpoint access and default RAG behavior.
+```bash
+curl -G "http://localhost:5000/api/chat2" --data-urlencode "quirie=Explain local RAG"
+```
+
+### 3. 🧠 Collapsible Model Thinking Process (Chain-of-Thought)
+* Prompts models (like Phi-4 or Qwen-2.5) to output step-by-step reasoning steps inside `<think>...</think>` containers, parsed by the UI into clean collapsible accordions.
+* **Thinking Mode Toggle**: Toggle this setting on/off in the Inference Settings panel. *Thinking mode is disabled by default to optimize local response speeds.*
 
 ---
 

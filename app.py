@@ -54,7 +54,7 @@ RAG_ENABLED = False
 WEB_SEARCH_ENABLED = False
 CHAT2_ENABLED = True
 CHAT2_RAG_ENABLED = False
-THINKING_ENABLED = True
+THINKING_ENABLED = False
 _retriever_cache = {}
 
 def get_retriever():
