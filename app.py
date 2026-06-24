@@ -27,6 +27,32 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 # ── Initialize the model engine ──────────────────────────────────────────────
 engine = MultiModelManager()
 
+# ── RAG configuration and retrieval caching ──────────────────────────────────
+from rag_engine import BM25Retriever, retrieve_web_context
+
+RAG_ENABLED = False
+WEB_SEARCH_ENABLED = False
+CHAT2_ENABLED = True
+CHAT2_RAG_ENABLED = False
+_retriever_cache = {}
+
+def get_retriever():
+    notes_dir = get_notes_dir()
+    if notes_dir not in _retriever_cache:
+        if len(_retriever_cache) > 5:
+            _retriever_cache.clear()
+        _retriever_cache[notes_dir] = BM25Retriever(notes_dir)
+    return _retriever_cache[notes_dir]
+
+def retrieve_notes_context(query, top_k=3):
+    try:
+        retriever = get_retriever()
+        return retriever.retrieve(query, top_k=top_k)
+    except Exception as e:
+        print(f"[RAG ERROR] Failed to retrieve context: {e}")
+        traceback.print_exc()
+        return []
+
 # Global dictionary to track Hugging Face model export and download processes
 active_downloads = {}
 
@@ -104,7 +130,12 @@ def health():
 @app.route("/api/config", methods=["GET"])
 def config():
     """Return model configuration for the UI."""
-    return jsonify(engine.get_config())
+    cfg = engine.get_config()
+    cfg["rag_enabled"] = RAG_ENABLED
+    cfg["web_search_enabled"] = WEB_SEARCH_ENABLED
+    cfg["chat2_enabled"] = CHAT2_ENABLED
+    cfg["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
+    return jsonify(cfg)
 
 
 @app.route("/api/system/stats", methods=["GET"])
@@ -171,11 +202,13 @@ def config_update():
         {
           "device": "GPU" | "CPU" | "AUTO" | "XPU", (optional)
           "max_new_tokens": int, (optional)
-          "max_input_tokens": int (optional)
+          "max_input_tokens": int, (optional)
+          "rag_enabled": bool (optional)
         }
 
     Returns updated config.
     """
+    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED
     data = request.get_json()
     if not data:
         return jsonify({"error": "Missing config data"}), 400
@@ -214,8 +247,24 @@ def config_update():
         except ValueError:
             pass
 
+    if "rag_enabled" in data:
+        RAG_ENABLED = bool(data["rag_enabled"])
+
+    if "web_search_enabled" in data:
+        WEB_SEARCH_ENABLED = bool(data["web_search_enabled"])
+
+    if "chat2_enabled" in data:
+        CHAT2_ENABLED = bool(data["chat2_enabled"])
+
+    if "chat2_rag_enabled" in data:
+        CHAT2_RAG_ENABLED = bool(data["chat2_rag_enabled"])
+
     # Fetch fresh config
     res_config = engine.get_config()
+    res_config["rag_enabled"] = RAG_ENABLED
+    res_config["web_search_enabled"] = WEB_SEARCH_ENABLED
+    res_config["chat2_enabled"] = CHAT2_ENABLED
+    res_config["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
     if device_changed and device_status:
         res_config["device_switch_result"] = device_status
 
@@ -284,8 +333,67 @@ def chat():
     # Allow client to override max_new_tokens via request body
     max_tokens = data.get("max_tokens", None)
 
+    # Check if RAG/Web Search is enabled for this request
+    is_rag = data.get("rag_enabled", RAG_ENABLED)
+    is_web = data.get("web_search_enabled", WEB_SEARCH_ENABLED)
+    sources = []
+    web_sources = []
+
+    if (is_rag or is_web) and messages:
+        messages = [dict(msg) for msg in messages]
+        latest_msg = messages[-1]
+        if latest_msg["role"] == "user":
+            query = latest_msg["content"]
+            context_block = ""
+            
+            if is_rag:
+                results = retrieve_notes_context(query)
+                if results:
+                    context_lines = []
+                    for r in results:
+                        context_lines.append(f"[File: {r['filename']}]\n{r['content']}")
+                    context_str = "\n\n".join(context_lines)
+                    context_block += (
+                        "[Context retrieved from Mousepad Notes]\n"
+                        "----------------------------------------\n"
+                        f"{context_str}\n"
+                        "----------------------------------------\n\n"
+                    )
+                    sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
+            
+            if is_web:
+                web_results = retrieve_web_context(query)
+                if web_results:
+                    context_lines = []
+                    for w in web_results:
+                        context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+                    context_str = "\n\n".join(context_lines)
+                    context_block += (
+                        "[Context retrieved from Web Search]\n"
+                        "----------------------------------------\n"
+                        f"{context_str}\n"
+                        "----------------------------------------\n\n"
+                    )
+                    web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
+
+            if context_block:
+                context_block += (
+                    "Based on the context retrieved above, please answer the user's request.\n"
+                    "User request: "
+                )
+                latest_msg["content"] = context_block + query
+
     def stream():
         try:
+            # Yield sources as the first SSE event so frontend can show them immediately
+            if (is_rag and sources) or (is_web and web_sources):
+                meta_payload = {}
+                if is_rag and sources:
+                    meta_payload["sources"] = sources
+                if is_web and web_sources:
+                    meta_payload["web_sources"] = web_sources
+                yield f"data: {json.dumps({'meta': meta_payload})}\n\n"
+
             for chunk in engine.generate_stream(messages, max_new_tokens=max_tokens):
                 if isinstance(chunk, dict) and "__meta__" in chunk:
                     # Forward generation metadata as a separate SSE event
@@ -337,9 +445,67 @@ def chat_sync():
     if not engine.is_loaded():
         return jsonify({"error": "Model is not loaded yet. Please wait."}), 503
 
+    # Check if RAG/Web Search is enabled for this request
+    is_rag = data.get("rag_enabled", RAG_ENABLED)
+    is_web = data.get("web_search_enabled", WEB_SEARCH_ENABLED)
+    sources = []
+    web_sources = []
+
+    if (is_rag or is_web) and messages:
+        messages = [dict(msg) for msg in messages]
+        latest_msg = messages[-1]
+        if latest_msg["role"] == "user":
+            query = latest_msg["content"]
+            context_block = ""
+            
+            if is_rag:
+                results = retrieve_notes_context(query)
+                if results:
+                    context_lines = []
+                    for r in results:
+                        context_lines.append(f"[File: {r['filename']}]\n{r['content']}")
+                    context_str = "\n\n".join(context_lines)
+                    context_block += (
+                        "[Context retrieved from Mousepad Notes]\n"
+                        "----------------------------------------\n"
+                        f"{context_str}\n"
+                        "----------------------------------------\n\n"
+                    )
+                    sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
+            
+            if is_web:
+                web_results = retrieve_web_context(query)
+                if web_results:
+                    context_lines = []
+                    for w in web_results:
+                        context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+                    context_str = "\n\n".join(context_lines)
+                    context_block += (
+                        "[Context retrieved from Web Search]\n"
+                        "----------------------------------------\n"
+                        f"{context_str}\n"
+                        "----------------------------------------\n\n"
+                    )
+                    web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
+
+            if context_block:
+                context_block += (
+                    "Based on the context retrieved above, please answer the user's request.\n"
+                    "User request: "
+                )
+                latest_msg["content"] = context_block + query
+
     try:
         response = engine.generate(messages)
-        return jsonify({"response": response})
+        ret_val = {"response": response}
+        if (is_rag and sources) or (is_web and web_sources):
+            meta_payload = {}
+            if is_rag and sources:
+                meta_payload["sources"] = sources
+            if is_web and web_sources:
+                meta_payload["web_sources"] = web_sources
+            ret_val["meta"] = meta_payload
+        return jsonify(ret_val)
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -352,6 +518,9 @@ def chat2():
     Accepts GET /api/chat2?quirie=... or POST with 'quirie' param/JSON.
     Returns plain text response (optionally streamed).
     """
+    if not CHAT2_ENABLED:
+        return "Error: Endpoint /api/chat2 is disabled.\n", 403
+
     # Check query param 'quirie' or 'query'
     query = request.args.get("quirie") or request.args.get("query")
     
@@ -368,6 +537,73 @@ def chat2():
 
     if not engine.is_loaded():
         return "Error: Model is not loaded yet. Please wait.\n", 503
+
+    # Check if RAG/Web Search is enabled for chat2
+    rag_val = request.args.get("rag")
+    web_val = request.args.get("web")
+    if rag_val is None and request.method == "POST":
+        if request.is_json:
+            data = request.get_json() or {}
+            rag_val = data.get("rag")
+            web_val = data.get("web")
+        else:
+            rag_val = request.form.get("rag")
+            web_val = request.form.get("web")
+            
+    is_rag = CHAT2_RAG_ENABLED
+    if rag_val is not None:
+        if isinstance(rag_val, bool):
+            is_rag = rag_val
+        else:
+            is_rag = str(rag_val).lower() not in ("false", "0", "no")
+
+    is_web = WEB_SEARCH_ENABLED
+    if web_val is not None:
+        if isinstance(web_val, bool):
+            is_web = web_val
+        else:
+            is_web = str(web_val).lower() not in ("false", "0", "no")
+
+    sources = []
+    web_sources = []
+    context_block = ""
+    
+    if is_rag:
+        results = retrieve_notes_context(query)
+        if results:
+            context_lines = []
+            for r in results:
+                context_lines.append(f"[File: {r['filename']}]\n{r['content']}")
+            context_str = "\n\n".join(context_lines)
+            context_block += (
+                "[Context retrieved from Mousepad Notes]\n"
+                "----------------------------------------\n"
+                f"{context_str}\n"
+                "----------------------------------------\n\n"
+            )
+            sources = [{"filename": r["filename"], "score": r["score"]} for r in results]
+
+    if is_web:
+        web_results = retrieve_web_context(query)
+        if web_results:
+            context_lines = []
+            for w in web_results:
+                context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+            context_str = "\n\n".join(context_lines)
+            context_block += (
+                "[Context retrieved from Web Search]\n"
+                "----------------------------------------\n"
+                f"{context_str}\n"
+                "----------------------------------------\n\n"
+            )
+            web_sources = [{"title": w["title"], "url": w["url"]} for w in web_results]
+
+    if context_block:
+        context_block += (
+            "Based on the context retrieved above, please answer the user's request.\n"
+            "User request: "
+        )
+        query = context_block + query
 
     messages = [{"role": "user", "content": query}]
 
@@ -392,6 +628,15 @@ def chat2():
     if stream_param:
         def stream_generator():
             try:
+                # For plain text stream, print RAG sources header if matched
+                if (is_rag and sources) or (is_web and web_sources):
+                    headers = []
+                    if is_rag and sources:
+                        headers.append(f"Notes: {', '.join([s['filename'] for s in sources])}")
+                    if is_web and web_sources:
+                        headers.append(f"Web: {', '.join([s['title'] for s in web_sources])}")
+                    yield f"[RAG Sources | {'; '.join(headers)}]\n\n"
+
                 for chunk in engine.generate_stream(messages):
                     if isinstance(chunk, dict) and "__meta__" in chunk:
                         continue
@@ -411,6 +656,14 @@ def chat2():
     else:
         try:
             response = engine.generate(messages)
+            if (is_rag and sources) or (is_web and web_sources):
+                headers = []
+                if is_rag and sources:
+                    headers.append(f"Notes: {', '.join([s['filename'] for s in sources])}")
+                if is_web and web_sources:
+                    headers.append(f"Web: {', '.join([s['title'] for s in web_sources])}")
+                sources_header = f"[RAG Sources | {'; '.join(headers)}]\n\n"
+                response = sources_header + response
             return Response(response, mimetype="text/plain")
         except Exception as e:
             traceback.print_exc()

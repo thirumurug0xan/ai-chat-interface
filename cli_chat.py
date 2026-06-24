@@ -109,10 +109,14 @@ def main():
     print(f"{CLR_BOLD}{CLR_MAGENTA}Chat loop active. Commands:{CLR_RESET}")
     print(f"  {CLR_CYAN}/exit{CLR_RESET} or {CLR_CYAN}/quit{CLR_RESET} - Exit chat session")
     print(f"  {CLR_CYAN}/clear{CLR_RESET}             - Clear conversation history")
+    print(f"  {CLR_CYAN}/rag{CLR_RESET}               - Toggle local Notes RAG retrieval")
+    print(f"  {CLR_CYAN}/web{CLR_RESET}               - Toggle live Web Search RAG retrieval")
     print(f"  {CLR_CYAN}/help{CLR_RESET}              - Show this help message")
     print(f"-------------------------------------------------------------")
 
     history = []
+    rag_enabled = False
+    web_enabled = False
 
     while True:
         try:
@@ -129,22 +133,98 @@ def main():
                 history = []
                 print(f"{CLR_YELLOW}🧹 Chat history cleared.{CLR_RESET}")
                 continue
+            elif user_input.lower() == '/rag':
+                rag_enabled = not rag_enabled
+                print(f"{CLR_GREEN}📚 Local RAG (Notes Retrieval): {'ENABLED' if rag_enabled else 'DISABLED'}{CLR_RESET}")
+                continue
+            elif user_input.lower() == '/web':
+                web_enabled = not web_enabled
+                print(f"{CLR_GREEN}🌐 Web RAG (Live Search): {'ENABLED' if web_enabled else 'DISABLED'}{CLR_RESET}")
+                continue
             elif user_input.lower() == '/help':
                 print(f"\n{CLR_BOLD}Available Commands:{CLR_RESET}")
                 print(f"  /exit, /quit - Terminate CLI session")
                 print(f"  /clear       - Reset conversation history")
+                print(f"  /rag         - Toggle retrieval from Mousepad Notes")
+                print(f"  /web         - Toggle live search query on the Web")
                 print(f"  /help        - Display options")
                 continue
 
             # Add message to history
             history.append({"role": "user", "content": user_input})
 
+            active_history = history
+            context_block = ""
+            
+            # If local RAG is enabled, retrieve context and inject it
+            if rag_enabled:
+                from rag_engine import BM25Retriever
+                # Determine notes directory
+                notes_dir = os.path.abspath(os.path.join(os.getcwd(), "notes"))
+                config_path = os.path.abspath(os.path.join(os.getcwd(), "notes_config.json"))
+                if os.path.exists(config_path):
+                    try:
+                        import json
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            config = json.load(f)
+                            custom_path = config.get("notes_dir")
+                            if custom_path:
+                                notes_dir = os.path.abspath(os.path.expanduser(custom_path))
+                    except Exception:
+                        pass
+                
+                try:
+                    retriever = BM25Retriever(notes_dir)
+                    results = retriever.retrieve(user_input, top_k=3)
+                    if results:
+                        print(f"{CLR_YELLOW}🔍 [RAG] Matching local notes found: {', '.join([r['filename'] for r in results])}{CLR_RESET}")
+                        context_lines = []
+                        for r in results:
+                            context_lines.append(f"[File: {r['filename']}]\n{r['content']}")
+                        context_str = "\n\n".join(context_lines)
+                        context_block += (
+                            "[Context retrieved from Mousepad Notes]\n"
+                            "----------------------------------------\n"
+                            f"{context_str}\n"
+                            "----------------------------------------\n\n"
+                        )
+                except Exception as e:
+                    print(f"{CLR_RED}⚠️ Local RAG Search Error: {e}{CLR_RESET}")
+
+            # If Web search is enabled, retrieve live results
+            if web_enabled:
+                try:
+                    from rag_engine import retrieve_web_context
+                    web_results = retrieve_web_context(user_input, top_k=3)
+                    if web_results:
+                        print(f"{CLR_YELLOW}🔍 [Web RAG] Search queries matched: {', '.join([w['title'] for w in web_results])}{CLR_RESET}")
+                        context_lines = []
+                        for w in web_results:
+                            context_lines.append(f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}")
+                        context_str = "\n\n".join(context_lines)
+                        context_block += (
+                            "[Context retrieved from Web Search]\n"
+                            "----------------------------------------\n"
+                            f"{context_str}\n"
+                            "----------------------------------------\n\n"
+                        )
+                except Exception as e:
+                    print(f"{CLR_RED}⚠️ Web RAG Search Error: {e}{CLR_RESET}")
+
+            if context_block:
+                context_block += (
+                    "Based on the context retrieved above, please answer the user's request.\n"
+                    "User request: "
+                )
+                active_history = [dict(h) for h in history]
+                active_history[-1]["content"] = context_block + user_input
+
             # Streaming response output
             print(f"{CLR_BOLD}{CLR_MAGENTA}🤖 Assistant: {CLR_RESET}", end="", flush=True)
             assistant_response = ""
             meta = None
             
-            for chunk in engine.generate_stream(history):
+            for chunk in engine.generate_stream(active_history):
                 if isinstance(chunk, dict) and "__meta__" in chunk:
                     meta = chunk["__meta__"]
                 else:
