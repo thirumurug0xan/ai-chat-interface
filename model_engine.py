@@ -80,6 +80,10 @@ class ModelEngine:
         self._requested_device = self.device  # Track what the user requested
         self._switching = False         # True while a device switch is in progress
 
+        # Force low-VRAM mode and max token limit configurations
+        self.force_low_vram = os.getenv("FORCE_LOW_VRAM_MODE", "False").lower() in ("true", "1", "yes")
+        self.max_token_limit = int(os.getenv("MAX_TOKEN_LIMIT", "4096"))
+
         # Load KV-cache configuration from environment
         use_cache_env = os.getenv("USE_CACHE", "True").lower() in ("true", "1", "yes")
         self._use_cache = use_cache_env
@@ -109,6 +113,16 @@ class ModelEngine:
             kv_prec = os.getenv("OV_KV_CACHE_PRECISION", "u8").strip()
             if kv_prec and kv_prec.upper() != "DEFAULT":
                 self.ov_config["KV_CACHE_PRECISION"] = kv_prec
+
+        if self.force_low_vram:
+            print("[ModelEngine] FORCE_LOW_VRAM_MODE is enabled. Applying memory optimizations to ov_config.")
+            self.ov_config.update({
+                "KV_CACHE_PRECISION": "u8",
+                "DYNAMIC_QUANTIZATION_GROUP_SIZE": "32",
+                "PERFORMANCE_HINT": "LATENCY",
+                "COMPUTE_HINT": "ECONOMY",
+                "GPU_DISABLE_REORDER_CACHING": "YES"
+            })
 
         self._last_load_warnings = []   # Warnings from the last load operation
 
@@ -195,6 +209,7 @@ class ModelEngine:
                 else:
                     # Strip GPU-only properties on CPU device to prevent driver/plugin exceptions
                     active_ov_config.pop("GPU_ENABLE_LARGE_ALLOCATIONS", None)
+                    active_ov_config.pop("GPU_DISABLE_REORDER_CACHING", None)
 
                 print(f"[ModelEngine] Loading {load_path} onto {device} with use_cache={self._use_cache} and ov_config={active_ov_config}...")
                 model_kwargs = {
@@ -393,6 +408,20 @@ class ModelEngine:
                     kv_prec = os.getenv("OV_KV_CACHE_PRECISION", "u8").strip()
                     if kv_prec and kv_prec.upper() != "DEFAULT":
                         self.ov_config["KV_CACHE_PRECISION"] = kv_prec
+
+                # Reload and apply Force low-VRAM settings
+                self.force_low_vram = os.getenv("FORCE_LOW_VRAM_MODE", "False").lower() in ("true", "1", "yes")
+                self.max_token_limit = int(os.getenv("MAX_TOKEN_LIMIT", "4096"))
+
+                if self.force_low_vram:
+                    print("[ModelEngine] FORCE_LOW_VRAM_MODE is enabled. Applying memory optimizations to ov_config.")
+                    self.ov_config.update({
+                        "KV_CACHE_PRECISION": "u8",
+                        "DYNAMIC_QUANTIZATION_GROUP_SIZE": "32",
+                        "PERFORMANCE_HINT": "LATENCY",
+                        "COMPUTE_HINT": "ECONOMY",
+                        "GPU_DISABLE_REORDER_CACHING": "YES"
+                    })
                 
                 try:
                     self.load()
@@ -738,6 +767,27 @@ class ModelEngine:
         except Exception:
             return 0
 
+    def _enforce_strict_truncation(self, inputs):
+        """Enforce strict truncation guardrail by keeping only the newest max_token_limit tokens."""
+        seq_len = inputs["input_ids"].shape[-1]
+        if seq_len > self.max_token_limit:
+            print(
+                f"[ModelEngine] WARNING: Input token length ({seq_len}) exceeds "
+                f"MAX_TOKEN_LIMIT ({self.max_token_limit}). Forcing hard truncation to keep only the newest "
+                f"tokens."
+            )
+            # Truncate input_ids and other keys along sequence dimension (last dimension)
+            inputs["input_ids"] = inputs["input_ids"][:, -self.max_token_limit:]
+            if "attention_mask" in inputs:
+                inputs["attention_mask"] = inputs["attention_mask"][:, -self.max_token_limit:]
+            if "position_ids" in inputs:
+                inputs["position_ids"] = inputs["position_ids"][:, -self.max_token_limit:]
+            for key in list(inputs.keys()):
+                if key not in ["input_ids", "attention_mask", "position_ids"]:
+                    if hasattr(inputs[key], "shape") and len(inputs[key].shape) >= 2 and inputs[key].shape[-1] == seq_len:
+                        inputs[key] = inputs[key][..., -self.max_token_limit:]
+        return inputs
+
     def generate(self, history: list[dict]) -> str:
         """
         Generate a response given a conversation history.
@@ -759,6 +809,7 @@ class ModelEngine:
                 trimmed, tokenize=False, add_generation_prompt=True
             )
             inputs = self.tokenizer(text, return_tensors="pt")
+            inputs = self._enforce_strict_truncation(inputs)
 
             try:
                 outputs = self.model.generate(
@@ -816,6 +867,7 @@ class ModelEngine:
                 trimmed, tokenize=False, add_generation_prompt=True
             )
             inputs = self.tokenizer(text, return_tensors="pt")
+            inputs = self._enforce_strict_truncation(inputs)
 
             streamer = TextIteratorStreamer(
                 self.tokenizer, skip_prompt=True, skip_special_tokens=True
