@@ -197,92 +197,92 @@ class ModelEngine:
         device_order = self._get_device_fallback_order()
 
         for device in device_order:
-            try:
-                # Prepare configuration for the specific device
-                active_ov_config = self.ov_config.copy() if self.ov_config else {}
-                
-                # Check for GPU-specific configurations
-                gpu_large_allocs = os.getenv("OV_GPU_ENABLE_LARGE_ALLOCATIONS", "True").lower() in ("true", "1", "yes")
-                if "GPU" in device.upper() or "AUTO" in device.upper() or "HETERO" in device.upper():
-                    if gpu_large_allocs and "GPU_ENABLE_LARGE_ALLOCATIONS" not in active_ov_config:
-                        active_ov_config["GPU_ENABLE_LARGE_ALLOCATIONS"] = "YES"
-                else:
-                    # Strip GPU-only properties on CPU device to prevent driver/plugin exceptions
-                    active_ov_config.pop("GPU_ENABLE_LARGE_ALLOCATIONS", None)
-                    active_ov_config.pop("GPU_DISABLE_REORDER_CACHING", None)
+            # Prepare configuration for the specific device
+            active_ov_config = self.ov_config.copy() if self.ov_config else {}
+            
+            # Check for GPU-specific configurations
+            gpu_large_allocs = os.getenv("OV_GPU_ENABLE_LARGE_ALLOCATIONS", "True").lower() in ("true", "1", "yes")
+            if "GPU" in device.upper() or "AUTO" in device.upper() or "HETERO" in device.upper():
+                if gpu_large_allocs and "GPU_ENABLE_LARGE_ALLOCATIONS" not in active_ov_config:
+                    active_ov_config["GPU_ENABLE_LARGE_ALLOCATIONS"] = "YES"
+            else:
+                # Strip GPU-only properties on CPU device to prevent driver/plugin exceptions
+                active_ov_config.pop("GPU_ENABLE_LARGE_ALLOCATIONS", None)
+                active_ov_config.pop("GPU_DISABLE_REORDER_CACHING", None)
 
-                print(f"[ModelEngine] Loading {load_path} onto {device} with use_cache={self._use_cache} and ov_config={active_ov_config}...")
-                model_kwargs = {
-                    "device": device,
-                    "compile": True,
-                    "use_cache": self._use_cache,
-                }
-                if active_ov_config:
-                    model_kwargs["ov_config"] = active_ov_config
-                if self.model_file:
-                    model_kwargs["file_name"] = self.model_file
+            while True:
+                try:
+                    print(f"[ModelEngine] Loading {load_path} onto {device} with use_cache={self._use_cache} and ov_config={active_ov_config}...")
+                    model_kwargs = {
+                        "device": device,
+                        "compile": True,
+                        "use_cache": self._use_cache,
+                    }
+                    if active_ov_config:
+                        model_kwargs["ov_config"] = active_ov_config
+                    if self.model_file:
+                        model_kwargs["file_name"] = self.model_file
 
-                self.model = OVModelForCausalLM.from_pretrained(
-                    load_path, **model_kwargs
-                )
-                self._active_device = device
-                self._loaded = True
-                print(f"[ModelEngine] Model loaded successfully on {device}.")
-                return
-            except Exception as e:
-                # Handle use_cache incompatibility: retry with use_cache=False
-                if _is_use_cache_error(e):
-                    print(f"[ModelEngine] use_cache=True not supported for this model. Retrying with use_cache=False...")
-                    self._use_cache = False
-                    self._last_load_warnings.append(
-                        "This model was exported without KV-cache support. "
-                        "Loaded with use_cache=False — generation may be slower."
+                    self.model = OVModelForCausalLM.from_pretrained(
+                        load_path, **model_kwargs
                     )
-                    self.model = None
-                    gc.collect()
-                    try:
-                        retry_kwargs = {
-                            "device": device,
-                            "compile": True,
-                            "use_cache": False,
-                        }
-                        if active_ov_config:
-                            retry_kwargs["ov_config"] = active_ov_config
-                        if self.model_file:
-                            retry_kwargs["file_name"] = self.model_file
-
-                        self.model = OVModelForCausalLM.from_pretrained(
-                            load_path, **retry_kwargs
+                    self._active_device = device
+                    self._loaded = True
+                    print(f"[ModelEngine] Model loaded successfully on {device}.")
+                    return
+                except Exception as e:
+                    # Check if exception is due to an unsupported property/option
+                    error_msg = str(e)
+                    unsupported_property = None
+                    
+                    # Check if any configured key name is present in the error message
+                    for key in list(active_ov_config.keys()):
+                        if key in error_msg:
+                            unsupported_property = key
+                            break
+                            
+                    # Match words that look like property names (UPPERCASE with underscores)
+                    if not unsupported_property:
+                        import re
+                        prop_matches = re.findall(r'\b[A-Z_]{3,}\b', error_msg)
+                        for match in prop_matches:
+                            if match in active_ov_config:
+                                unsupported_property = match
+                                break
+                                
+                    if unsupported_property:
+                        print(f"[ModelEngine] Detected unsupported property: {unsupported_property}. Removing from ov_config and retrying...")
+                        active_ov_config.pop(unsupported_property)
+                        self.ov_config.pop(unsupported_property, None)
+                        continue  # Retry loading on the same device with the cleaned configuration
+                        
+                    # Handle use_cache incompatibility: retry with use_cache=False
+                    if _is_use_cache_error(e) and self._use_cache:
+                        print(f"[ModelEngine] use_cache=True not supported for this model. Retrying with use_cache=False...")
+                        self._use_cache = False
+                        self._last_load_warnings.append(
+                            "This model was exported without KV-cache support. "
+                            "Loaded with use_cache=False — generation may be slower."
                         )
-                        self._active_device = device
-                        self._loaded = True
-                        print(f"[ModelEngine] Model loaded successfully on {device} with use_cache=False.")
-                        return
-                    except Exception as e2:
-                        if device != "CPU" and ("GPU" in device.upper() or "HETERO" in device.upper()):
-                            print(f"[ModelEngine] Failed to load on {device} even with use_cache=False: {e2}")
-                            print(f"[ModelEngine] Falling back to next device...")
-                            self.model = None
-                            gc.collect()
-                            continue
-                        else:
-                            raise
-
-                if (_is_gpu_oom_error(e) or _is_fatal_gpu_crash_error(e)) and device != "CPU":
-                    print(f"[ModelEngine] GPU memory error on {device}: {e}")
-                    print(f"[ModelEngine] Falling back to next device...")
-                    # Clean up failed load
-                    self.model = None
-                    gc.collect()
-                    continue
-                elif device != "CPU" and ("GPU" in device.upper() or "HETERO" in device.upper()):
-                    print(f"[ModelEngine] Failed to load on {device}: {e}")
-                    print(f"[ModelEngine] Falling back to next device...")
-                    self.model = None
-                    gc.collect()
-                    continue
-                else:
-                    raise
+                        self.model = None
+                        gc.collect()
+                        continue
+                        
+                    # If we got here, it's a device load failure (OOM or other)
+                    if (_is_gpu_oom_error(e) or _is_fatal_gpu_crash_error(e)) and device != "CPU":
+                        print(f"[ModelEngine] GPU memory error on {device}: {e}")
+                        print(f"[ModelEngine] Falling back to next device...")
+                        self.model = None
+                        gc.collect()
+                        break
+                    elif device != "CPU" and ("GPU" in device.upper() or "HETERO" in device.upper()):
+                        print(f"[ModelEngine] Failed to load on {device}: {e}")
+                        print(f"[ModelEngine] Falling back to next device...")
+                        self.model = None
+                        gc.collect()
+                        break
+                    else:
+                        raise
 
         raise RuntimeError(
             f"Failed to load model on any device. Tried: {device_order}"
