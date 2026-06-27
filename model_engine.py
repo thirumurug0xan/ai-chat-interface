@@ -944,6 +944,8 @@ class ModelEngine:
                 }
             }
         finally:
+            if "thread" in locals() and thread.is_alive():
+                thread.join()
             self._lock.release()
 
         # Encourage garbage collection after generation to free GPU memory
