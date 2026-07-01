@@ -53,7 +53,7 @@ A premium, lightweight, local AI workstation and chat interface designed specifi
 ### 1. Clone & Navigate
 ```bash
 git clone https://github.com/thirumurug0xan/ai-chat-interface.git
-cd local-ai-workstation
+cd ai-chat-interface
 ```
 
 ### 2. Create Virtual Environment
