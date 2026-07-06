@@ -716,9 +716,27 @@ def mcp_chat():
     formatted_messages = []
     for msg in messages:
         if isinstance(msg, dict) and "role" in msg and "content" in msg:
+            content = msg["content"]
+            if isinstance(content, list):
+                # Extract text parts from block lists (e.g. Cline multimodal/structured format)
+                text_parts = []
+                for part in content:
+                    if isinstance(part, dict):
+                        if part.get("type") == "text" and "text" in part:
+                            text_parts.append(part["text"])
+                        elif "text" in part:
+                            text_parts.append(part["text"])
+                    elif isinstance(part, str):
+                        text_parts.append(part)
+                content = "\n".join(text_parts)
+            elif content is None:
+                content = ""
+            else:
+                content = str(content)
+
             formatted_messages.append({
                 "role": msg["role"],
-                "content": msg["content"]
+                "content": content
             })
 
     if not formatted_messages:
