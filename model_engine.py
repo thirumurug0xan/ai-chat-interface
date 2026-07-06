@@ -124,6 +124,7 @@ class ModelEngine:
                 "GPU_DISABLE_REORDER_CACHING": "YES"
             })
 
+        self.kv_cache_precision = self.ov_config.get("KV_CACHE_PRECISION", "default").strip().lower()
         self._last_load_warnings = []   # Warnings from the last load operation
 
     @property
@@ -200,6 +201,12 @@ class ModelEngine:
             # Prepare configuration for the specific device
             active_ov_config = self.ov_config.copy() if self.ov_config else {}
             
+            # Apply dynamic KV cache precision configuration
+            if self.kv_cache_precision and self.kv_cache_precision.lower() != "default":
+                active_ov_config["KV_CACHE_PRECISION"] = self.kv_cache_precision.lower()
+            else:
+                active_ov_config.pop("KV_CACHE_PRECISION", None)
+            
             # Check for GPU-specific configurations
             gpu_large_allocs = os.getenv("OV_GPU_ENABLE_LARGE_ALLOCATIONS", "True").lower() in ("true", "1", "yes")
             if "GPU" in device.upper() or "AUTO" in device.upper() or "HETERO" in device.upper():
@@ -254,6 +261,8 @@ class ModelEngine:
                         print(f"[ModelEngine] Detected unsupported property: {unsupported_property}. Removing from ov_config and retrying...")
                         active_ov_config.pop(unsupported_property)
                         self.ov_config.pop(unsupported_property, None)
+                        if unsupported_property == "KV_CACHE_PRECISION":
+                            self.kv_cache_precision = "default"
                         continue  # Retry loading on the same device with the cleaned configuration
                         
                     # Handle use_cache incompatibility: retry with use_cache=False
@@ -296,6 +305,43 @@ class ModelEngine:
         self._active_device = None
         gc.collect()
         print("[ModelEngine] Model unloaded.")
+
+    def reload(self) -> dict:
+        """Unload and reload the model on the current device to apply compile-time options."""
+        if not self._loaded:
+            return {"success": False, "message": "No model loaded to reload."}
+
+        with self._lock:
+            try:
+                self._unload()
+                self.load()
+                return {
+                    "success": True,
+                    "model_name": self.model_name,
+                    "model_path": self.model_path,
+                    "message": f"Successfully reloaded model with KV cache precision: {self.kv_cache_precision}",
+                    "warnings": list(self._last_load_warnings),
+                }
+            except Exception as e:
+                print(f"[ModelEngine] Failed to reload model: {e}")
+                # Try to load again to recover
+                try:
+                    self.load()
+                    return {
+                        "success": False,
+                        "model_name": self.model_name,
+                        "model_path": self.model_path,
+                        "message": f"Reload failed: {str(e)}. Recovered with current settings.",
+                        "warnings": list(self._last_load_warnings),
+                    }
+                except Exception as e2:
+                    return {
+                        "success": False,
+                        "model_name": "None",
+                        "model_path": "None",
+                        "message": f"Reload failed: {str(e)} and recovery failed. Model is offline.",
+                        "warnings": [],
+                    }
 
     def switch_model(
         self,
@@ -422,6 +468,8 @@ class ModelEngine:
                         "COMPUTE_HINT": "ECONOMY",
                         "GPU_DISABLE_REORDER_CACHING": "YES"
                     })
+                
+                self.kv_cache_precision = self.ov_config.get("KV_CACHE_PRECISION", "default").strip().lower()
                 
                 try:
                     self.load()
@@ -670,10 +718,22 @@ class ModelEngine:
                 head_dim = getattr(config, "head_dim", 128)
                 
         # Check if KV cache precision is set to u8 or similar
-        if self.ov_config and isinstance(self.ov_config, dict):
+        if self.kv_cache_precision:
+            prec = self.kv_cache_precision.lower()
+            if "u8" in prec or "int8" in prec or "i8" in prec:
+                kv_precision = 1
+            elif "f32" in prec or "fp32" in prec:
+                kv_precision = 4
+            else:
+                kv_precision = 2
+        elif self.ov_config and isinstance(self.ov_config, dict):
             prec = self.ov_config.get("KV_CACHE_PRECISION", "").lower()
             if "u8" in prec or "int8" in prec or "i8" in prec:
                 kv_precision = 1
+            elif "f32" in prec or "fp32" in prec:
+                kv_precision = 4
+            else:
+                kv_precision = 2
                 
         return {
             "model_name": self.model_name,
@@ -699,6 +759,7 @@ class ModelEngine:
             "model_file": self.model_file,
             "trust_remote_code": self.trust_remote_code,
             "fix_mistral_regex": self.fix_mistral_regex,
+            "kv_cache_precision": self.kv_cache_precision,
             "ov_config": self.ov_config,
         }
 
@@ -1166,6 +1227,10 @@ class MultiModelManager:
             "model_path": "",
             "device": "—",
             "device_friendly": "—",
+            "requested_device": os.getenv("DEVICE", "AUTO").upper(),
+            "kv_cache_precision": os.getenv("OV_KV_CACHE_PRECISION", "u8").strip().lower(),
+            "max_new_tokens": int(os.getenv("MAX_NEW_TOKENS", "512")),
+            "max_input_tokens": int(os.getenv("MAX_INPUT_TOKENS", "1024")),
             "loaded": False,
             "loaded_models": [],
         }
@@ -1254,3 +1319,21 @@ class MultiModelManager:
         eng = self.active_engine
         if eng:
             eng._requested_device = val
+
+    @property
+    def kv_cache_precision(self):
+        eng = self.active_engine
+        return eng.kv_cache_precision if eng else "default"
+
+    @kv_cache_precision.setter
+    def kv_cache_precision(self, val):
+        eng = self.active_engine
+        if eng:
+            eng.kv_cache_precision = val
+
+    def reload(self) -> dict:
+        """Reload the active model engine."""
+        eng = self.active_engine
+        if not eng:
+            return {"success": False, "message": "No active model engine to reload."}
+        return eng.reload()

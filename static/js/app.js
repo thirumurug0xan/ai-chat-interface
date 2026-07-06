@@ -141,6 +141,7 @@ const dom = {
     settingsModalMinimize: $("#settings-modal-minimize"),
     settingsModalFullscreen: $("#settings-modal-fullscreen"),
     settingDevice: $("#setting-device"),
+    settingKvPrecision: $("#setting-kv-precision"),
     settingMaxNewTokens: $("#setting-max-new-tokens"),
     settingMaxNewTokensVal: $("#setting-max-new-tokens-val"),
     settingMaxInputTokens: $("#setting-max-input-tokens"),
@@ -1174,6 +1175,11 @@ async function fetchConfig() {
 
         // Update device selector active state
         updateDeviceSelectorUI(requestedDevice, friendlyDevice, data.available_devices);
+
+        // Sync KV cache precision selector
+        if (dom.settingKvPrecision) {
+            dom.settingKvPrecision.value = data.kv_cache_precision || "default";
+        }
 
         if (data.loaded) {
             setStatus("ready", "Ready");
@@ -2961,6 +2967,7 @@ async function saveSettings() {
     }
 
     const newDevice = dom.settingDevice.value.toUpperCase();
+    const newKvPrecision = dom.settingKvPrecision ? dom.settingKvPrecision.value.toLowerCase() : "default";
     const newMaxNewTokens = parseInt(dom.settingMaxNewTokens.value, 10);
     const newMaxInputTokens = parseInt(dom.settingMaxInputTokens.value, 10);
     const newRagEnabled = dom.settingRagEnabled ? dom.settingRagEnabled.checked : false;
@@ -2971,18 +2978,30 @@ async function saveSettings() {
 
     const currentDevice = (state.modelConfig?.requested_device || "").toUpperCase();
     const deviceChanged = newDevice !== currentDevice;
+    const currentPrecision = (state.modelConfig?.kv_cache_precision || "").toLowerCase();
+    const precisionChanged = newKvPrecision !== currentPrecision;
 
-    // Show switching overlay if device changed
-    if (deviceChanged) {
+    const reloadNeeded = deviceChanged || precisionChanged;
+
+    // Show switching overlay if reload is needed
+    if (reloadNeeded) {
         if (dom.deviceSwitchingOverlay) {
-            dom.deviceSwitchingText.textContent = `Switching device to ${newDevice}...`;
+            let msg = "Applying settings and reloading model...";
+            if (deviceChanged && precisionChanged) {
+                msg = `Switching device to ${newDevice} and KV Cache to ${newKvPrecision}...`;
+            } else if (deviceChanged) {
+                msg = `Switching device to ${newDevice}...`;
+            } else {
+                msg = `Switching KV Cache precision to ${newKvPrecision}...`;
+            }
+            dom.deviceSwitchingText.textContent = msg;
             dom.deviceSwitchingOverlay.classList.add("visible");
         }
         dom.deviceBadge.textContent = newDevice;
         dom.deviceBadge.className = "device-badge switching";
         dom.btnSend.disabled = true;
-        setStatus("loading", "Switching device...");
-        dom.modelStatus.textContent = "Switching...";
+        setStatus("loading", "Reloading model...");
+        dom.modelStatus.textContent = "Reloading...";
     }
 
     try {
@@ -2991,6 +3010,7 @@ async function saveSettings() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 device: newDevice,
+                kv_cache_precision: newKvPrecision,
                 max_new_tokens: newMaxNewTokens,
                 max_input_tokens: newMaxInputTokens,
                 rag_enabled: newRagEnabled,
@@ -3008,13 +3028,13 @@ async function saveSettings() {
 
         const data = await res.json();
 
-        if (deviceChanged) {
-            // Check device switch result
+        if (reloadNeeded) {
+            // Check switch/reload result
             const switchResult = data.device_switch_result || { success: data.loaded };
             if (switchResult.success) {
-                showToast(switchResult.message || `Switched to ${newDevice}`, "success");
+                showToast(switchResult.message || "Settings applied and model reloaded", "success");
             } else {
-                showToast(switchResult.message || `Failed to switch to ${newDevice}`, "error");
+                showToast(switchResult.message || "Failed to apply model settings", "error");
             }
         } else {
             showToast("Settings saved successfully", "success");

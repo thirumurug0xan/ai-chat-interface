@@ -22,6 +22,41 @@ from system_stats import get_system_stats
 
 load_dotenv()
 
+def update_env_file(key: str, value: str):
+    """Safely update or insert a key-value pair in the .env file and reload it."""
+    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".env"))
+    if not os.path.exists(env_path):
+        # Create empty .env if not exists
+        with open(env_path, "w", encoding="utf-8") as f:
+            pass
+
+    with open(env_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    key_found = False
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        parts = stripped.split("=", 1)
+        if len(parts) > 0:
+            left = parts[0].strip()
+            if left.startswith("#"):
+                left = left.lstrip("#").strip()
+            if left == key:
+                new_lines.append(f"{key}={value}\n")
+                key_found = True
+                continue
+        new_lines.append(line)
+
+    if not key_found:
+        new_lines.append(f"{key}={value}\n")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    # Reload updated environment variables into the process
+    load_dotenv(override=True)
+
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
 # ── Initialize the model engine ──────────────────────────────────────────────
@@ -254,6 +289,7 @@ def config_update():
           "device": "GPU" | "CPU" | "AUTO" | "XPU", (optional)
           "max_new_tokens": int, (optional)
           "max_input_tokens": int, (optional)
+          "kv_cache_precision": "u8" | "f16" | "f32" | "default" (optional)
           "rag_enabled": bool (optional)
         }
 
@@ -265,21 +301,45 @@ def config_update():
         return jsonify({"error": "Missing config data"}), 400
 
     device_changed = False
+    precision_changed = False
     device_status = None
+    reload_status = None
 
-    # Handle device switch if requested
+    # Determine if device changed
     if "device" in data:
-        requested = data["device"].strip().upper()
-        if requested != engine._requested_device:
-            if engine._lock.locked():
-                return jsonify({
-                    "success": False,
-                    "active_device": engine._active_device,
-                    "requested_device": requested,
-                    "message": "Cannot switch device while generation is in progress. Please wait.",
-                }), 409
-            device_status = engine.switch_device(requested)
+        requested_device = data["device"].strip().upper()
+        if requested_device != engine._requested_device:
             device_changed = True
+
+    # Determine if precision changed
+    if "kv_cache_precision" in data:
+        requested_prec = data["kv_cache_precision"].strip().lower()
+        active_prec = engine.kv_cache_precision.strip().lower() if engine.kv_cache_precision else "default"
+        if requested_prec != active_prec:
+            precision_changed = True
+
+    # If compilation changes are requested, ensure no active lock (not currently generating)
+    if device_changed or precision_changed:
+        if engine._lock.locked():
+            return jsonify({
+                "success": False,
+                "active_device": engine._active_device,
+                "requested_device": engine._requested_device,
+                "message": "Cannot switch device or KV cache precision while generation is in progress. Please wait.",
+            }), 409
+
+    # Update precision in env/memory
+    if "kv_cache_precision" in data:
+        val = data["kv_cache_precision"].strip().lower()
+        if val in ("u8", "f16", "f32", "default"):
+            engine.kv_cache_precision = val
+            update_env_file("OV_KV_CACHE_PRECISION", val)
+
+    # Update device in env/memory
+    if "device" in data:
+        val = data["device"].strip().upper()
+        if val in engine.AVAILABLE_DEVICES:
+            update_env_file("DEVICE", val)
 
     # Update tokens settings
     if "max_new_tokens" in data:
@@ -287,6 +347,7 @@ def config_update():
             val = int(data["max_new_tokens"])
             if 64 <= val <= 8192:
                 engine.max_new_tokens = val
+                update_env_file("MAX_NEW_TOKENS", str(val))
         except ValueError:
             pass
 
@@ -295,8 +356,17 @@ def config_update():
             val = int(data["max_input_tokens"])
             if 256 <= val <= 128000:
                 engine.max_input_tokens = val
+                update_env_file("MAX_INPUT_TOKENS", str(val))
         except ValueError:
             pass
+
+    # Trigger device switch or reload
+    if device_changed or precision_changed:
+        if device_changed:
+            requested_device = data["device"].strip().upper()
+            device_status = engine.switch_device(requested_device)
+        else:
+            reload_status = engine.reload()
 
     if "rag_enabled" in data:
         RAG_ENABLED = bool(data["rag_enabled"])
@@ -320,8 +390,11 @@ def config_update():
     res_config["chat2_enabled"] = CHAT2_ENABLED
     res_config["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
     res_config["thinking_enabled"] = THINKING_ENABLED
+    
     if device_changed and device_status:
         res_config["device_switch_result"] = device_status
+    elif precision_changed and reload_status:
+        res_config["device_switch_result"] = reload_status
 
     return jsonify(res_config)
 

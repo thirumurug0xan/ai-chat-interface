@@ -456,6 +456,17 @@
                     </div>
 
                     <div class="setting-item">
+                        <label class="setting-label-bold" for="setting-kv-precision">KV Cache Precision</label>
+                        <div class="setting-description">Select precision for Key-Value cache. Compress to 8-bit (u8) to save 50% VRAM.</div>
+                        <select id="setting-kv-precision" class="setting-select">
+                            <option value="u8">8-bit unsigned integer (u8 - Optimized)</option>
+                            <option value="f16">16-bit floating point (f16 - High Precision)</option>
+                            <option value="f32">32-bit floating point (f32)</option>
+                            <option value="default">Model Default (Let OpenVINO decide)</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-item">
                         <div class="setting-label-row">
                             <label class="setting-label-bold" for="setting-max-new-tokens">Max Response Length (Max New
                                 Tokens)</label>
