@@ -94,6 +94,8 @@ Open **http://localhost:5000** in your browser.
 | `/api/config` | GET | Returns active model configuration |
 | `/api/chat` | POST | SSE chat inference stream |
 | `/api/chat2` | GET/POST | Simple curl-friendly endpoint (streaming/sync, optional RAG) |
+| `/api/mcp/chat` | POST | OpenAI-compatible completions endpoint (for MCP) |
+| `/v1/chat/completions` | POST | OpenAI-compatible completions endpoint (for VS Code) |
 | `/api/fs/list` | POST | Directory tree filesystem lister |
 | `/api/model/switch` | POST | Switches model path with custom overrides |
 | `/api/models/download` | POST | Triggers HF optimum-cli export background task |
@@ -120,6 +122,11 @@ curl -G "http://localhost:5000/api/chat2" --data-urlencode "quirie=Explain local
 ### 3. 🧠 Collapsible Model Thinking Process (Chain-of-Thought)
 * Prompts models (like Phi-4 or Qwen-2.5) to output step-by-step reasoning steps inside `<think>...</think>` containers, parsed by the UI into clean collapsible accordions.
 * **Thinking Mode Toggle**: Toggle this setting on/off in the Inference Settings panel. *Thinking mode is disabled by default to optimize local response speeds.*
+
+### 4. 🔌 OpenAI & MCP Compatibility Layer (VS Code & IDE Extensions)
+Exposes standard OpenAI-compatible endpoints to power external development extensions (like **Continue**, **Cline**, **Roo Code**) and custom Model Context Protocol (MCP) clients locally.
+* **Compatibility URL**: `http://localhost:5000/v1`
+* **Direct Integration**: Refer to the [mcp_and_extension_integration.md](file:///home/aitest/ai-chat-interface/docs/mcp_and_extension_integration.md) guide for full config templates for Claude Desktop, Continue, and Cline.
 
 ---
 

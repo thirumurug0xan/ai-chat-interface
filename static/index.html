@@ -694,6 +694,23 @@
                 <div class="help-section">
                     <div class="help-section-title">
                         <span class="help-section-icon">🔌</span>
+                        VS Code & MCP Integration
+                    </div>
+                    <div class="help-items">
+                        <div class="help-item">
+                            <div class="help-item-title">VS Code Extensions (Continue, Cline, Roo Code, etc.)</div>
+                            <div class="help-item-desc">Connect standard extensions using the OpenAI compatibility layer. Set the Base URL to <code>http://localhost:5000/v1</code>.</div>
+                        </div>
+                        <div class="help-item">
+                            <div class="help-item-title">Claude Desktop & MCP Servers</div>
+                            <div class="help-item-desc">Configure custom MCP servers or desktop prompts to query your local model at <code>/api/mcp/chat</code>. Refer to <code>docs/mcp_and_extension_integration.md</code> for config examples.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="help-section">
+                    <div class="help-section-title">
+                        <span class="help-section-icon">📚</span>
                         API Reference
                     </div>
                     <div class="help-api-table">
@@ -729,6 +746,16 @@
                                 <span class="api-method post" style="width: fit-content; font-size: 9px; padding: 1px 6px;">POST</span>
                             </div>
                             <span>Simple chat (curl-friendly, optional RAG)</span>
+                        </div>
+                        <div class="help-api-row">
+                            <code>/api/mcp/chat</code>
+                            <span class="api-method post">POST</span>
+                            <span>OpenAI-compatible completions endpoint (for MCP)</span>
+                        </div>
+                        <div class="help-api-row">
+                            <code>/v1/chat/completions</code>
+                            <span class="api-method post">POST</span>
+                            <span>Standard OpenAI chat endpoint (for VS Code extensions)</span>
                         </div>
                         <div class="help-api-row">
                             <code>/api/context/count</code>

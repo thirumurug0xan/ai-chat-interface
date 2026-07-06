@@ -688,6 +688,137 @@ def chat_sync():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/mcp/chat", methods=["POST"])
+@app.route("/v1/chat/completions", methods=["POST"])
+def mcp_chat():
+    """
+    OpenAI-compatible chat completions endpoint.
+    Supports streaming and non-streaming modes.
+    Enables integration with VS Code extensions (e.g. Continue, Cline),
+    Claude Desktop MCP servers, and other local dev tools.
+    """
+    if not engine.is_loaded():
+        return jsonify({"error": "Model is not loaded. Please wait."}), 503
+
+    data = request.get_json() or {}
+    messages = data.get("messages")
+    if not messages:
+        return jsonify({"error": "Missing 'messages' in request body"}), 400
+
+    # Extract parameters
+    stream_requested = bool(data.get("stream", False))
+    max_tokens = data.get("max_tokens") or data.get("max_new_tokens")
+    model_name = engine.model_name
+    chat_id = f"chatcmpl-{uuid.uuid4()}"
+    created_time = int(time.time())
+
+    # Format messages to role/content pairs
+    formatted_messages = []
+    for msg in messages:
+        if isinstance(msg, dict) and "role" in msg and "content" in msg:
+            formatted_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+    if not formatted_messages:
+        return jsonify({"error": "Invalid messages format"}), 400
+
+    if stream_requested:
+        def sse_generator():
+            try:
+                for chunk in engine.generate_stream(formatted_messages, max_new_tokens=max_tokens):
+                    # Skip meta dicts
+                    if isinstance(chunk, dict) and "__meta__" in chunk:
+                        continue
+                    
+                    payload = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "content": chunk
+                            },
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+                # Send final stop chunk
+                final_payload = {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_time,
+                    "model": model_name,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }]
+                }
+                yield f"data: {json.dumps(final_payload)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                err_payload = {
+                    "error": {
+                        "message": str(e),
+                        "type": "server_error",
+                        "code": 500
+                    }
+                }
+                yield f"data: {json.dumps(err_payload)}\n\n"
+                yield "data: [DONE]\n\n"
+                traceback.print_exc()
+
+        return Response(
+            sse_generator(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+    else:
+        try:
+            response_text = engine.generate(formatted_messages)
+            completion_tokens = engine.count_tokens([{"role": "assistant", "content": response_text}])
+            prompt_tokens = engine.count_tokens(formatted_messages)
+            
+            payload = {
+                "id": chat_id,
+                "object": "chat.completion",
+                "created": created_time,
+                "model": model_name,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": response_text
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens
+                }
+            }
+            return jsonify(payload)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({
+                "error": {
+                    "message": str(e),
+                    "type": "server_error",
+                    "code": 500
+                }
+            }), 500
+
+
 @app.route("/api/chat2", methods=["GET", "POST"])
 def chat2():
     """
