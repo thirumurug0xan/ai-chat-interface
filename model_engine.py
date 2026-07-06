@@ -920,8 +920,8 @@ class ModelEngine:
         # Trim history to fit within token budget
         trimmed = self._trim_history_to_fit(history)
 
-        # Hold the lock only during tokenization and thread start,
-        # NOT during the entire streaming iteration
+        # Hold the lock during the entire generation and streaming process
+        # to ensure that no two threads execute inference/generation concurrently.
         self._lock.acquire()
         try:
             text = self.tokenizer.apply_chat_template(
@@ -955,59 +955,59 @@ class ModelEngine:
                 daemon=True,
             )
             thread.start()
-        finally:
-            # Release the lock immediately after starting generation
-            # This allows other requests to be queued rather than blocked
-            self._lock.release()
 
-        # Stream tokens outside the lock
-        token_count = 0
-        start_time = None
-        try:
-            for chunk in streamer:
-                if chunk:
-                    if start_time is None:
-                        start_time = time.perf_counter()
-                    # Count tokens in this chunk
-                    token_count += len(self.tokenizer.encode(chunk, add_special_tokens=False))
-                    yield chunk
-        except Exception as e:
-            if _is_fatal_gpu_crash_error(e):
-                yield "\n\n🚨 ERROR: The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
-            elif _is_gpu_oom_error(e):
-                yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
-            else:
-                raise
+            # Stream tokens
+            token_count = 0
+            start_time = None
+            try:
+                for chunk in streamer:
+                    if chunk:
+                        if start_time is None:
+                            start_time = time.perf_counter()
+                        # Count tokens in this chunk
+                        token_count += len(self.tokenizer.encode(chunk, add_special_tokens=False))
+                        yield chunk
+            except Exception as e:
+                if _is_fatal_gpu_crash_error(e):
+                    yield "\n\n🚨 ERROR: The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
+                elif _is_gpu_oom_error(e):
+                    yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
+                else:
+                    raise
 
-        # Wait for the generation thread to finish with a timeout
-        thread.join(timeout=self.generation_timeout)
+            # Wait for the generation thread to finish with a timeout
+            thread.join(timeout=self.generation_timeout)
 
-        if thread.is_alive():
-            print(
-                f"[ModelEngine] WARNING: Generation thread did not finish within "
-                f"{self.generation_timeout}s timeout."
-            )
+            if thread.is_alive():
+                print(
+                    f"[ModelEngine] WARNING: Generation thread did not finish within "
+                    f"{self.generation_timeout}s timeout."
+                )
 
-        # Check if the generation thread encountered an error
-        if generation_error[0] is not None:
-            err = generation_error[0]
-            if _is_fatal_gpu_crash_error(err):
-                yield "\n\n🚨 ERROR: The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
-            elif _is_gpu_oom_error(err):
-                yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
-            else:
-                raise RuntimeError(f"Generation failed: {err}") from err
+            # Check if the generation thread encountered an error
+            if generation_error[0] is not None:
+                err = generation_error[0]
+                if _is_fatal_gpu_crash_error(err):
+                    yield "\n\n🚨 ERROR: The model crashed due to exceeding the maximum allocatable memory size on the GPU. Please restart the server."
+                elif _is_gpu_oom_error(err):
+                    yield "\n\n⚠️ GPU ran out of memory. Try reducing the 'Max Input Tokens' (context window) in settings, starting a new conversation, or switching the device to CPU."
+                else:
+                    raise RuntimeError(f"Generation failed: {err}") from err
 
-        # Compute and yield generation metadata
-        elapsed = time.perf_counter() - start_time if start_time else 0
-        tps = round(token_count / elapsed, 1) if elapsed > 0 else 0
-        yield {
-            "__meta__": {
-                "tokens": token_count,
-                "elapsed_sec": round(elapsed, 2),
-                "tokens_per_sec": tps,
+            # Compute and yield generation metadata
+            elapsed = time.perf_counter() - start_time if start_time else 0
+            tps = round(token_count / elapsed, 1) if elapsed > 0 else 0
+            yield {
+                "__meta__": {
+                    "tokens": token_count,
+                    "elapsed_sec": round(elapsed, 2),
+                    "tokens_per_sec": tps,
+                }
             }
-        }
+        finally:
+            if "thread" in locals() and thread.is_alive():
+                thread.join()
+            self._lock.release()
 
         # Encourage garbage collection after generation to free GPU memory
         gc.collect()
