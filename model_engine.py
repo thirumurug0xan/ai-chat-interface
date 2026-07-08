@@ -200,13 +200,7 @@ class ModelEngine:
         for device in device_order:
             # Prepare configuration for the specific device
             active_ov_config = self.ov_config.copy() if self.ov_config else {}
-            
-            # Apply dynamic KV cache precision configuration
-            if self.kv_cache_precision and self.kv_cache_precision.lower() != "default":
-                active_ov_config["KV_CACHE_PRECISION"] = self.kv_cache_precision.lower()
-            else:
-                active_ov_config.pop("KV_CACHE_PRECISION", None)
-            
+
             # Check for GPU-specific configurations
             gpu_large_allocs = os.getenv("OV_GPU_ENABLE_LARGE_ALLOCATIONS", "True").lower() in ("true", "1", "yes")
             if "GPU" in device.upper() or "AUTO" in device.upper() or "HETERO" in device.upper():
@@ -300,10 +294,13 @@ class ModelEngine:
     def _unload(self):
         """Unload the current model and free resources."""
         print("[ModelEngine] Unloading model...")
+        old_model = self.model
         self.model = None
         self._loaded = False
         self._active_device = None
+        del old_model  # Explicitly break reference to free OpenVINO C++ buffers
         gc.collect()
+        gc.collect()   # Second pass to catch cyclic references
         print("[ModelEngine] Model unloaded.")
 
     def reload(self) -> dict:
@@ -313,6 +310,12 @@ class ModelEngine:
 
         with self._lock:
             try:
+                # Sync ov_config to match current kv_cache_precision BEFORE reload
+                if self.kv_cache_precision and self.kv_cache_precision.lower() != "default":
+                    self.ov_config["KV_CACHE_PRECISION"] = self.kv_cache_precision
+                else:
+                    self.ov_config.pop("KV_CACHE_PRECISION", None)
+
                 self._unload()
                 self.load()
                 return {
@@ -1183,6 +1186,7 @@ class MultiModelManager:
             "model_path": model_path,
             "message": f"Switched to: {eng.model_name}",
             "loaded_models": self.get_loaded_models(),
+            "config": eng.get_config(),
         }
 
     def unload_model(self, model_path: str) -> dict:
@@ -1212,6 +1216,8 @@ class MultiModelManager:
         }
 
     # Delegate common operations to the active engine
+    AVAILABLE_DEVICES = ModelEngine.AVAILABLE_DEVICES
+
     def is_loaded(self):
         eng = self.active_engine
         return eng.is_loaded() if eng else False

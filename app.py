@@ -328,11 +328,18 @@ def config_update():
                 "message": "Cannot switch device or KV cache precision while generation is in progress. Please wait.",
             }), 409
 
-    # Update precision in env/memory
+    # Update precision in env/memory and keep ov_config in sync
     if "kv_cache_precision" in data:
         val = data["kv_cache_precision"].strip().lower()
         if val in ("u8", "f16", "f32", "default"):
             engine.kv_cache_precision = val
+            # Sync ov_config so switch_device/reload uses the correct precision
+            eng = engine.active_engine
+            if eng:
+                if val != "default":
+                    eng.ov_config["KV_CACHE_PRECISION"] = val
+                else:
+                    eng.ov_config.pop("KV_CACHE_PRECISION", None)
             update_env_file("OV_KV_CACHE_PRECISION", val)
 
     # Update device in env/memory
@@ -1088,21 +1095,14 @@ def fs_list():
 def model_switch():
     """
     Switch the active model folder at runtime.
+    Loading a new model is safe during generation because each model
+    gets its own independent ModelEngine with its own lock.
     """
     data = request.get_json()
     if not data or "model_path" not in data:
         return jsonify({"error": "Missing 'model_path' in request body"}), 400
 
     requested_path = data["model_path"].strip()
-
-    # Don't allow switching while generating
-    if engine._lock.locked():
-        return jsonify({
-            "success": False,
-            "model_name": engine.model_name,
-            "model_path": engine.model_path,
-            "message": "Cannot switch model while generation is in progress. Please wait.",
-        }), 409
 
     try:
         # Extract optional configuration options from the request body

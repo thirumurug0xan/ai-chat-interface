@@ -3705,11 +3705,6 @@ async function handleFsConfirm() {
 async function loadModelFromPath() {
     if (!fsState.selectedPath) return;
 
-    if (state.isGenerating) {
-        showToast("Cannot switch model while generation is in progress. Please wait.", "error");
-        return;
-    }
-
     const targetModelPath = fsState.selectedPath;
 
     // Retrieve form settings from DOM
@@ -3855,6 +3850,8 @@ function renderModelSwitcherDropdown() {
 }
 
 async function activateLoadedModel(modelPath) {
+    // Activation is a simple pointer swap - safe even during generation.
+    // The in-flight generation completes on the old engine; the next request uses the new one.
     try {
         const res = await fetch("/api/models/activate", {
             method: "POST",
