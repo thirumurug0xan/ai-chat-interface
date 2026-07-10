@@ -90,6 +90,8 @@ WEB_SEARCH_ENABLED = False
 CHAT2_ENABLED = True
 CHAT2_RAG_ENABLED = False
 THINKING_ENABLED = False
+DEEP_RESEARCH_ENABLED = False
+DEEP_RESEARCH_MAX_ROUNDS = 3
 _retriever_cache = {}
 
 def get_retriever():
@@ -108,6 +110,21 @@ def retrieve_notes_context(query, top_k=3):
         print(f"[RAG ERROR] Failed to retrieve context: {e}")
         traceback.print_exc()
         return []
+
+def strip_think_tags(text):
+    """
+    Remove <think>...</think> blocks (and any content inside them) from model output.
+    Handles models like miniCPM that emit thinking blocks by default.
+    """
+    if not text:
+        return text
+    # Remove <think>...</think> blocks (greedy, multiline)
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Also remove any lone opening <think> tag with trailing content (incomplete blocks)
+    cleaned = re.sub(r'<think>[^<]*$', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    # Remove lone <think> or </think> tags
+    cleaned = re.sub(r'</?think>', '', cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
 
 def optimize_search_query(query):
     """
@@ -129,6 +146,8 @@ def optimize_search_query(query):
         ]
         optimized = engine.generate(search_prompt_history)
         if optimized:
+            # Strip <think>...</think> blocks that some models emit by default
+            optimized = strip_think_tags(optimized)
             cleaned = optimized.strip().replace('"', '').replace("'", "").replace("\n", " ").replace("\r", " ")
             if len(cleaned.strip()) > 0:
                 print(f"[SEARCH OPTIMIZATION] Optimized query: '{query}' -> '{cleaned.strip()}'")
@@ -137,6 +156,117 @@ def optimize_search_query(query):
         print(f"Error optimizing search query: {e}")
         
     return query
+
+def deep_research_web_search(query, max_rounds=None):
+    """
+    Iterative deep research: searches the web, shows results to the model,
+    and asks if more data is needed. If the model says it needs more, it
+    generates a follow-up query and searches again. Repeats until the model
+    says it has enough data or the max rounds are reached.
+
+    Returns:
+        (combined_context_block, all_web_sources) — the accumulated context
+        string and the list of all web source dicts.
+    """
+    if max_rounds is None:
+        max_rounds = DEEP_RESEARCH_MAX_ROUNDS
+
+    all_web_sources = []
+    accumulated_snippets = []
+    seen_urls = set()
+    current_query = optimize_search_query(query)
+
+    for round_num in range(1, max_rounds + 1):
+        print(f"[DEEP RESEARCH] Round {round_num}/{max_rounds} — Searching: '{current_query}'")
+
+        web_results = retrieve_web_context(current_query, top_k=5)
+        new_snippets = []
+        for w in web_results:
+            if w.get("url") not in seen_urls:
+                seen_urls.add(w["url"])
+                snippet_text = f"[Source URL: {w['url']}]\nTitle: {w['title']}\nSnippet: {w['snippet']}"
+                new_snippets.append(snippet_text)
+                accumulated_snippets.append(snippet_text)
+                all_web_sources.append({"title": w["title"], "url": w["url"]})
+
+        if not new_snippets:
+            print(f"[DEEP RESEARCH] Round {round_num}: No new results found. Stopping.")
+            break
+
+        # If this is the last allowed round, don't ask — just stop
+        if round_num >= max_rounds:
+            print(f"[DEEP RESEARCH] Max rounds ({max_rounds}) reached. Stopping.")
+            break
+
+        # Ask the model if it has enough context — simple yes/no
+        all_context_so_far = "\n\n".join(accumulated_snippets)
+        eval_prompt = [
+            {"role": "system", "content": (
+                "You are a research assistant. Review the search results and the user's question. "
+                "Do you have enough information to fully answer the question? "
+                "Say yes to stop or say no to continue searching. "
+                "Output only yes or no."
+            )},
+            {"role": "user", "content": (
+                f"Question: {query}\n\n"
+                f"Search results so far:\n{all_context_so_far}\n\n"
+                f"Do you have enough information? Say yes to stop or say no to continue."
+            )}
+        ]
+
+        try:
+            eval_response = engine.generate(eval_prompt)
+            eval_response = strip_think_tags(eval_response).strip().lower()
+            print(f"[DEEP RESEARCH] Model evaluation: '{eval_response}'")
+
+            # Check if model says yes (sufficient)
+            if "yes" in eval_response:
+                print(f"[DEEP RESEARCH] Model says data is sufficient after round {round_num}.")
+                break
+            elif "no" in eval_response:
+                # Model wants more data — ask for a follow-up search query
+                followup_prompt = [
+                    {"role": "system", "content": (
+                        "You are a search query generator. The user needs more information. "
+                        "Based on the original question and the search results already collected, "
+                        "generate a different, more specific search query to find missing information. "
+                        "Output only the search query words, nothing else."
+                    )},
+                    {"role": "user", "content": (
+                        f"Original question: {query}\n\n"
+                        f"Already searched and found:\n{all_context_so_far}\n\n"
+                        f"Generate a new search query to find what's still missing:"
+                    )}
+                ]
+                follow_up = engine.generate(followup_prompt)
+                follow_up = strip_think_tags(follow_up).strip().replace('"', '').replace("'", "").replace("\n", " ")
+                if follow_up and len(follow_up.strip()) > 0:
+                    current_query = follow_up.strip()
+                    print(f"[DEEP RESEARCH] Model requests follow-up search: '{current_query}'")
+                else:
+                    print(f"[DEEP RESEARCH] Empty follow-up query. Stopping.")
+                    break
+            else:
+                # Model didn't clearly say yes or no — treat as sufficient
+                print(f"[DEEP RESEARCH] Unclear model response ('{eval_response}'), treating as sufficient.")
+                break
+        except Exception as e:
+            print(f"[DEEP RESEARCH] Error during evaluation: {e}")
+            break
+
+    # Build final context block
+    if accumulated_snippets:
+        context_str = "\n\n".join(accumulated_snippets)
+        context_block = (
+            f"[Context retrieved from Deep Web Research ({len(accumulated_snippets)} sources)]\n"
+            "----------------------------------------\n"
+            f"{context_str}\n"
+            "----------------------------------------\n\n"
+        )
+    else:
+        context_block = ""
+
+    return context_block, all_web_sources
 
 # Global dictionary to track Hugging Face model export and download processes
 active_downloads = {}
@@ -221,6 +351,8 @@ def config():
     cfg["chat2_enabled"] = CHAT2_ENABLED
     cfg["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
     cfg["thinking_enabled"] = THINKING_ENABLED
+    cfg["deep_research_enabled"] = DEEP_RESEARCH_ENABLED
+    cfg["deep_research_max_rounds"] = DEEP_RESEARCH_MAX_ROUNDS
     return jsonify(cfg)
 
 
@@ -295,7 +427,7 @@ def config_update():
 
     Returns updated config.
     """
-    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED, THINKING_ENABLED
+    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED, THINKING_ENABLED, DEEP_RESEARCH_ENABLED, DEEP_RESEARCH_MAX_ROUNDS
     data = request.get_json()
     if not data:
         return jsonify({"error": "Missing config data"}), 400
@@ -390,6 +522,17 @@ def config_update():
     if "thinking_enabled" in data:
         THINKING_ENABLED = bool(data["thinking_enabled"])
 
+    if "deep_research_enabled" in data:
+        DEEP_RESEARCH_ENABLED = bool(data["deep_research_enabled"])
+
+    if "deep_research_max_rounds" in data:
+        try:
+            val = int(data["deep_research_max_rounds"])
+            if 1 <= val <= 10:
+                DEEP_RESEARCH_MAX_ROUNDS = val
+        except (ValueError, TypeError):
+            pass
+
     # Fetch fresh config
     res_config = engine.get_config()
     res_config["rag_enabled"] = RAG_ENABLED
@@ -397,6 +540,8 @@ def config_update():
     res_config["chat2_enabled"] = CHAT2_ENABLED
     res_config["chat2_rag_enabled"] = CHAT2_RAG_ENABLED
     res_config["thinking_enabled"] = THINKING_ENABLED
+    res_config["deep_research_enabled"] = DEEP_RESEARCH_ENABLED
+    res_config["deep_research_max_rounds"] = DEEP_RESEARCH_MAX_ROUNDS
     
     if device_changed and device_status:
         res_config["device_switch_result"] = device_status
@@ -520,6 +665,12 @@ def chat():
                         "----------------------------------------\n\n"
                     )
                     web_sources = [{"title": scraped_url, "url": scraped_url}]
+                elif DEEP_RESEARCH_ENABLED:
+                    # Use iterative deep research mode
+                    deep_block, deep_sources = deep_research_web_search(query)
+                    if deep_block:
+                        context_block += deep_block
+                        web_sources = deep_sources
                 else:
                     search_query = optimize_search_query(query)
                     web_results = retrieve_web_context(search_query)
@@ -656,6 +807,11 @@ def chat_sync():
                         "----------------------------------------\n\n"
                     )
                     web_sources = [{"title": scraped_url, "url": scraped_url}]
+                elif DEEP_RESEARCH_ENABLED:
+                    deep_block, deep_sources = deep_research_web_search(query)
+                    if deep_block:
+                        context_block += deep_block
+                        web_sources = deep_sources
                 else:
                     search_query = optimize_search_query(query)
                     web_results = retrieve_web_context(search_query)
@@ -926,6 +1082,11 @@ def chat2():
                 "----------------------------------------\n\n"
             )
             web_sources = [{"title": scraped_url, "url": scraped_url}]
+        elif DEEP_RESEARCH_ENABLED:
+            deep_block, deep_sources = deep_research_web_search(query)
+            if deep_block:
+                context_block += deep_block
+                web_sources = deep_sources
         else:
             search_query = optimize_search_query(query)
             web_results = retrieve_web_context(search_query)

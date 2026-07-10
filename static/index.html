@@ -516,6 +516,22 @@
                         <div class="setting-description">When enabled, the chat agent will perform live search queries on the internet using DuckDuckGo to answer questions with real-time web context.</div>
                     </div>
 
+                    <div class="setting-item" id="setting-deep-research-container" style="transition: opacity 0.2s ease;">
+                        <label class="setting-label-bold" style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" id="setting-deep-research-enabled" style="width: 18px; height: 18px; cursor: pointer; margin: 0;">
+                            <span>Enable Deep Research (Iterative Search)</span>
+                        </label>
+                        <div class="setting-description">When enabled with Web RAG, the model will perform multiple search rounds — evaluating results after each round and requesting follow-up searches until it has sufficient data to answer. This produces more thorough and accurate responses but takes longer.</div>
+                        <div id="deep-research-rounds-container" style="margin-top: 10px; display: none;">
+                            <div class="setting-label-row">
+                                <label class="setting-label-bold" for="setting-deep-research-max-rounds" style="font-size: 12px;">Max Research Rounds</label>
+                                <input type="number" id="setting-deep-research-max-rounds-val" class="setting-value-input" min="1" max="10" step="1" value="3">
+                            </div>
+                            <div class="setting-description">Maximum number of iterative search rounds before stopping (1–10). Higher values allow more thorough research but take longer.</div>
+                            <input type="range" id="setting-deep-research-max-rounds" class="setting-slider-modern" min="1" max="10" step="1" value="3">
+                        </div>
+                    </div>
+
                     <div class="setting-item">
                         <label class="setting-label-bold" style="display: flex; align-items: center; gap: 8px;">
                             <input type="checkbox" id="setting-thinking-enabled" style="width: 18px; height: 18px; cursor: pointer; margin: 0;">

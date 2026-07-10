@@ -21,6 +21,8 @@ const state = {
     chat2Enabled: true,         // Track chat2 endpoint enabled state
     chat2RagEnabled: true,      // Track chat2 default RAG enabled state
     thinkingEnabled: false,      // Track if model thinking process is enabled
+    deepResearchEnabled: false,  // Track if deep iterative web search is enabled
+    deepResearchMaxRounds: 3,    // Max rounds for deep research
 };
 
 const fsState = {
@@ -152,6 +154,11 @@ const dom = {
     settingChat2Enabled: $("#setting-chat2-enabled"),
     settingChat2RagContainer: $("#setting-chat2-rag-container"),
     settingChat2RagEnabled: $("#setting-chat2-rag-enabled"),
+    settingDeepResearchEnabled: $("#setting-deep-research-enabled"),
+    settingDeepResearchContainer: $("#setting-deep-research-container"),
+    settingDeepResearchMaxRounds: $("#setting-deep-research-max-rounds"),
+    settingDeepResearchMaxRoundsVal: $("#setting-deep-research-max-rounds-val"),
+    deepResearchRoundsContainer: $("#deep-research-rounds-container"),
     ragWindow: $("#rag-window"),
     ragLabel: $("#rag-label"),
     webSearchWindow: $("#web-search-window"),
@@ -623,6 +630,49 @@ function initEventListeners() {
 
     if (dom.settingChat2Enabled) {
         dom.settingChat2Enabled.addEventListener("change", updateChat2SettingsUI);
+    }
+
+    // Deep Research toggle — show/hide rounds slider and respect web search dependency
+    if (dom.settingDeepResearchEnabled) {
+        dom.settingDeepResearchEnabled.addEventListener("change", () => {
+            if (dom.deepResearchRoundsContainer) {
+                dom.deepResearchRoundsContainer.style.display = dom.settingDeepResearchEnabled.checked ? "block" : "none";
+            }
+        });
+    }
+
+    // Deep Research max rounds — sync slider and number input
+    if (dom.settingDeepResearchMaxRounds && dom.settingDeepResearchMaxRoundsVal) {
+        dom.settingDeepResearchMaxRounds.addEventListener("input", (e) => {
+            dom.settingDeepResearchMaxRoundsVal.value = e.target.value;
+        });
+        dom.settingDeepResearchMaxRoundsVal.addEventListener("change", (e) => {
+            let val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val < 1) val = 1;
+            if (val > 10) val = 10;
+            e.target.value = val;
+            dom.settingDeepResearchMaxRounds.value = val;
+        });
+    }
+
+    // Web Search toggle should update Deep Research dependency
+    if (dom.settingWebSearchEnabled) {
+        dom.settingWebSearchEnabled.addEventListener("change", () => {
+            const isWebEnabled = dom.settingWebSearchEnabled.checked;
+            if (dom.settingDeepResearchEnabled) {
+                dom.settingDeepResearchEnabled.disabled = !isWebEnabled;
+                if (!isWebEnabled) {
+                    dom.settingDeepResearchEnabled.checked = false;
+                    if (dom.deepResearchRoundsContainer) {
+                        dom.deepResearchRoundsContainer.style.display = "none";
+                    }
+                }
+            }
+            if (dom.settingDeepResearchContainer) {
+                dom.settingDeepResearchContainer.style.opacity = isWebEnabled ? "1" : "0.5";
+                dom.settingDeepResearchContainer.style.pointerEvents = isWebEnabled ? "auto" : "none";
+            }
+        });
     }
 
     // RAG footer toggle button
@@ -1236,6 +1286,11 @@ async function fetchConfig() {
         // Store thinking setting
         state.thinkingEnabled = !!data.thinking_enabled;
 
+        // Store deep research settings
+        state.deepResearchEnabled = !!data.deep_research_enabled;
+        state.deepResearchMaxRounds = data.deep_research_max_rounds || 3;
+        updateDeepResearchUI();
+
         // Update model switcher label
         updateModelSwitcherLabel();
     } catch (err) {
@@ -1266,6 +1321,32 @@ function updateWebSearchUI() {
         if (dom.webSearchWindow) dom.webSearchWindow.classList.remove("active");
         if (dom.webSearchLabel) dom.webSearchLabel.textContent = "Web: Off";
         if (dom.settingWebSearchEnabled) dom.settingWebSearchEnabled.checked = false;
+    }
+}
+
+function updateDeepResearchUI() {
+    const isWebEnabled = state.webSearchEnabled;
+    const isDeepEnabled = state.deepResearchEnabled;
+
+    // Deep Research requires Web Search to be enabled
+    if (dom.settingDeepResearchEnabled) {
+        dom.settingDeepResearchEnabled.checked = isDeepEnabled;
+        dom.settingDeepResearchEnabled.disabled = !isWebEnabled;
+    }
+    if (dom.settingDeepResearchContainer) {
+        dom.settingDeepResearchContainer.style.opacity = isWebEnabled ? "1" : "0.5";
+        dom.settingDeepResearchContainer.style.pointerEvents = isWebEnabled ? "auto" : "none";
+    }
+
+    // Show/hide the rounds slider based on deep research toggle
+    if (dom.deepResearchRoundsContainer) {
+        dom.deepResearchRoundsContainer.style.display = isDeepEnabled ? "block" : "none";
+    }
+    if (dom.settingDeepResearchMaxRounds) {
+        dom.settingDeepResearchMaxRounds.value = state.deepResearchMaxRounds;
+    }
+    if (dom.settingDeepResearchMaxRoundsVal) {
+        dom.settingDeepResearchMaxRoundsVal.value = state.deepResearchMaxRounds;
     }
 }
 
@@ -2943,6 +3024,7 @@ function openSettingsModal() {
         if (dom.settingChat2RagEnabled) {
             dom.settingChat2RagEnabled.checked = !!state.chat2RagEnabled;
         }
+        updateDeepResearchUI();
         updateChat2SettingsUI();
         // update select option disabled states
         const friendly = state.modelConfig.device_friendly || state.modelConfig.device || "—";
@@ -2975,6 +3057,8 @@ async function saveSettings() {
     const newThinkingEnabled = dom.settingThinkingEnabled ? dom.settingThinkingEnabled.checked : true;
     const newChat2Enabled = dom.settingChat2Enabled ? dom.settingChat2Enabled.checked : false;
     const newChat2RagEnabled = dom.settingChat2RagEnabled ? dom.settingChat2RagEnabled.checked : false;
+    const newDeepResearchEnabled = dom.settingDeepResearchEnabled ? dom.settingDeepResearchEnabled.checked : false;
+    const newDeepResearchMaxRounds = dom.settingDeepResearchMaxRounds ? parseInt(dom.settingDeepResearchMaxRounds.value, 10) : 3;
 
     const currentDevice = (state.modelConfig?.requested_device || "").toUpperCase();
     const deviceChanged = newDevice !== currentDevice;
@@ -3017,7 +3101,9 @@ async function saveSettings() {
                 web_search_enabled: newWebSearchEnabled,
                 thinking_enabled: newThinkingEnabled,
                 chat2_enabled: newChat2Enabled,
-                chat2_rag_enabled: newChat2RagEnabled
+                chat2_rag_enabled: newChat2RagEnabled,
+                deep_research_enabled: newDeepResearchEnabled,
+                deep_research_max_rounds: newDeepResearchMaxRounds
             }),
         });
 
@@ -3051,6 +3137,9 @@ async function saveSettings() {
         state.chat2Enabled = !!data.chat2_enabled;
         state.chat2RagEnabled = !!data.chat2_rag_enabled;
         state.thinkingEnabled = !!data.thinking_enabled;
+        state.deepResearchEnabled = !!data.deep_research_enabled;
+        state.deepResearchMaxRounds = data.deep_research_max_rounds || 3;
+        updateDeepResearchUI();
         saveState();
 
         const friendly = data.device_friendly || data.device || newDevice;
