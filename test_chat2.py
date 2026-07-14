@@ -48,7 +48,12 @@ class TestChat2Endpoint(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content_type, 'text/plain; charset=utf-8')
         self.assertEqual(response.data, b"Hello world")
-        engine.generate_stream.assert_called_once_with([{"role": "user", "content": "Hello"}])
+        
+        args, kwargs = engine.generate_stream.call_args
+        messages = args[0]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("generate a file", messages[0]["content"])
+        self.assertEqual(messages[1], {"role": "user", "content": "Hello"})
 
     def test_chat2_sync_success(self):
         engine.is_loaded = MagicMock(return_value=True)
@@ -58,7 +63,12 @@ class TestChat2Endpoint(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content_type, 'text/plain; charset=utf-8')
         self.assertEqual(response.data, b"Synchronous response")
-        engine.generate.assert_called_once_with([{"role": "user", "content": "Hello"}])
+        
+        args, kwargs = engine.generate.call_args
+        messages = args[0]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("generate a file", messages[0]["content"])
+        self.assertEqual(messages[1], {"role": "user", "content": "Hello"})
 
     def test_chat2_post_json_success(self):
         engine.is_loaded = MagicMock(return_value=True)
@@ -67,7 +77,12 @@ class TestChat2Endpoint(unittest.TestCase):
         response = self.app.post('/api/chat2', json={"quirie": "Hello JSON", "stream": "false"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, b"JSON response")
-        engine.generate.assert_called_once_with([{"role": "user", "content": "Hello JSON"}])
+        
+        args, kwargs = engine.generate.call_args
+        messages = args[0]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("generate a file", messages[0]["content"])
+        self.assertEqual(messages[1], {"role": "user", "content": "Hello JSON"})
 
     def test_chat2_post_form_success(self):
         engine.is_loaded = MagicMock(return_value=True)
@@ -76,7 +91,31 @@ class TestChat2Endpoint(unittest.TestCase):
         response = self.app.post('/api/chat2', data={"quirie": "Hello Form", "stream": "false"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, b"Form response")
-        engine.generate.assert_called_once_with([{"role": "user", "content": "Hello Form"}])
+        
+        args, kwargs = engine.generate.call_args
+        messages = args[0]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("generate a file", messages[0]["content"])
+        self.assertEqual(messages[1], {"role": "user", "content": "Hello Form"})
+
+    def test_file_generation_disabled(self):
+        import app as app_module
+        original_val = app_module.FILE_GENERATION_ENABLED
+        app_module.FILE_GENERATION_ENABLED = False
+        
+        try:
+            engine.is_loaded = MagicMock(return_value=True)
+            engine.generate = MagicMock(return_value="No file instruction")
+            
+            response = self.app.get('/api/chat2?quirie=Hello&stream=false')
+            self.assertEqual(response.status_code, 200)
+            
+            args, kwargs = engine.generate.call_args
+            messages = args[0]
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0], {"role": "user", "content": "Hello"})
+        finally:
+            app_module.FILE_GENERATION_ENABLED = original_val
 
 if __name__ == '__main__':
     unittest.main()
