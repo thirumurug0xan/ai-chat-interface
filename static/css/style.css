@@ -1146,6 +1146,95 @@ body {
     fill: none;
 }
 
+/* Styling for file cards and code block headers when filename is detected */
+.code-block-wrapper.file-block {
+    border-color: var(--accent-1);
+    box-shadow: 0 0 12px rgba(108, 92, 231, 0.15);
+}
+
+.code-block-header.file-detected {
+    background: rgba(108, 92, 231, 0.12);
+    border-bottom: 1px solid rgba(108, 92, 231, 0.22);
+}
+
+.file-info-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.file-info-container:hover {
+    background: var(--bg-glass-strong);
+}
+
+.file-info-container:active {
+    transform: scale(0.98);
+}
+
+.file-name-text {
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px dashed var(--text-tertiary);
+    transition: all var(--transition-fast);
+    text-transform: none !important; /* Ensure case sensitivity of filenames */
+}
+
+.file-info-container:hover .file-name-text {
+    color: var(--accent-2);
+    border-bottom-color: var(--accent-2);
+}
+
+.file-size-badge {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-glass-strong);
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    font-family: var(--font-mono);
+    border: 1px solid var(--border-subtle);
+}
+
+.code-block-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-download-code {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: var(--font-sans);
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-download-code:hover {
+    color: var(--text-primary);
+    background: var(--bg-glass-strong);
+}
+
+.btn-download-code:active {
+    transform: scale(0.95);
+}
+
+.btn-download-code svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    stroke: currentColor;
+    stroke-width: 2px;
+    fill: none;
+}
+
 .message-content pre {
     margin: 0;
     padding: 14px;

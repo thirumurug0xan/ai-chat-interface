@@ -92,6 +92,7 @@ CHAT2_RAG_ENABLED = False
 THINKING_ENABLED = False
 DEEP_RESEARCH_ENABLED = False
 DEEP_RESEARCH_MAX_ROUNDS = 3
+FILE_GENERATION_ENABLED = os.getenv("FILE_GENERATION_ENABLED", "True").lower() in ("true", "1", "yes")
 _retriever_cache = {}
 
 def get_retriever():
@@ -322,6 +323,51 @@ def run_export_process(task_id, cmd, output_dir, hf_token=None):
         task["process"] = None
 
 
+def inject_file_generation_instructions(messages: list) -> list:
+    """
+    Ensures that a system prompt instructing the model on how to format
+    generated files is present. Appends instructions to any existing system prompt.
+    """
+    if not FILE_GENERATION_ENABLED:
+        return messages
+
+    file_instruction = (
+        "\n\nIf the user requests you to generate a file (such as a script, a code file, data file, CSV, HTML, CSS, text, etc.), "
+        "you MUST specify the filename in the code block info string like this:\n"
+        "```python filename=\"main.py\"\n"
+        "# code/content here\n"
+        "```\n"
+        "Or write the file name/path clearly as a comment in the first line of the code block (e.g. `# script.py` or `// main.js`). "
+        "This allows the system to present a direct download link/card for the user."
+    )
+    
+    # Check if there is an existing system message
+    has_system = False
+    for msg in messages:
+        if msg.get("role") == "system":
+            has_system = True
+            content = msg.get("content", "")
+            if file_instruction not in content:
+                msg["content"] = content + file_instruction
+            break
+            
+    if not has_system:
+        # If thinking is enabled, we'll combine it in the new system prompt
+        system_content = "You are a helpful assistant."
+        if THINKING_ENABLED:
+            system_content = (
+                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
+                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
+                "After the </think> tag, output your final response."
+            )
+        system_content += file_instruction
+        messages.insert(0, {
+            "role": "system",
+            "content": system_content
+        })
+        
+    return messages
+
 
 # ── Static file serving ──────────────────────────────────────────────────────
 
@@ -353,6 +399,7 @@ def config():
     cfg["thinking_enabled"] = THINKING_ENABLED
     cfg["deep_research_enabled"] = DEEP_RESEARCH_ENABLED
     cfg["deep_research_max_rounds"] = DEEP_RESEARCH_MAX_ROUNDS
+    cfg["file_generation_enabled"] = FILE_GENERATION_ENABLED
     return jsonify(cfg)
 
 
@@ -427,7 +474,7 @@ def config_update():
 
     Returns updated config.
     """
-    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED, THINKING_ENABLED, DEEP_RESEARCH_ENABLED, DEEP_RESEARCH_MAX_ROUNDS
+    global RAG_ENABLED, WEB_SEARCH_ENABLED, CHAT2_ENABLED, CHAT2_RAG_ENABLED, THINKING_ENABLED, DEEP_RESEARCH_ENABLED, DEEP_RESEARCH_MAX_ROUNDS, FILE_GENERATION_ENABLED
     data = request.get_json()
     if not data:
         return jsonify({"error": "Missing config data"}), 400
@@ -533,6 +580,10 @@ def config_update():
         except (ValueError, TypeError):
             pass
 
+    if "file_generation_enabled" in data:
+        FILE_GENERATION_ENABLED = bool(data["file_generation_enabled"])
+        update_env_file("FILE_GENERATION_ENABLED", str(FILE_GENERATION_ENABLED))
+
     # Fetch fresh config
     res_config = engine.get_config()
     res_config["rag_enabled"] = RAG_ENABLED
@@ -542,6 +593,7 @@ def config_update():
     res_config["thinking_enabled"] = THINKING_ENABLED
     res_config["deep_research_enabled"] = DEEP_RESEARCH_ENABLED
     res_config["deep_research_max_rounds"] = DEEP_RESEARCH_MAX_ROUNDS
+    res_config["file_generation_enabled"] = FILE_GENERATION_ENABLED
     
     if device_changed and device_status:
         res_config["device_switch_result"] = device_status
@@ -610,17 +662,8 @@ def chat():
         messages_copy.append(dict(msg))
     messages = messages_copy
 
-    # Ensure system prompt guides the model to think (if enabled)
-    has_system = any(m.get("role") == "system" for m in messages)
-    if not has_system and THINKING_ENABLED:
-        messages.insert(0, {
-            "role": "system",
-            "content": (
-                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
-                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
-                "After the </think> tag, output your final response."
-            )
-        })
+    # Ensure system prompt guides the model to think and supports file generation
+    messages = inject_file_generation_instructions(messages)
 
     if not engine.is_loaded():
         return jsonify({"error": "Model is not loaded yet. Please wait."}), 503
@@ -756,16 +799,8 @@ def chat_sync():
         return jsonify({"error": "Messages list is empty"}), 400
 
     messages = [dict(msg) for msg in messages]
-    has_system = any(m.get("role") == "system" for m in messages)
-    if not has_system and THINKING_ENABLED:
-        messages.insert(0, {
-            "role": "system",
-            "content": (
-                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
-                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
-                "After the </think> tag, output your final response."
-            )
-        })
+    # Ensure system prompt guides the model to think and supports file generation
+    messages = inject_file_generation_instructions(messages)
 
     if not engine.is_loaded():
         return jsonify({"error": "Model is not loaded yet. Please wait."}), 503
@@ -1111,16 +1146,8 @@ def chat2():
         query = context_block + query
 
     messages = []
-    if THINKING_ENABLED:
-        messages.append({
-            "role": "system",
-            "content": (
-                "Before answering, you must write out your step-by-step thinking process inside <think>...</think> tags. "
-                "In your thinking process, analyze the request, outline what steps/actions are needed, and verify assumptions. "
-                "After the </think> tag, output your final response."
-            )
-        })
     messages.append({"role": "user", "content": query})
+    messages = inject_file_generation_instructions(messages)
 
     # Determine if streaming is requested (enabled by default)
     stream_val = request.args.get("stream")

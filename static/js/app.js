@@ -21,6 +21,7 @@ const state = {
     chat2Enabled: true,         // Track chat2 endpoint enabled state
     chat2RagEnabled: true,      // Track chat2 default RAG enabled state
     thinkingEnabled: false,      // Track if model thinking process is enabled
+    fileGenerationEnabled: true,  // Track if model file generation is enabled
     deepResearchEnabled: false,  // Track if deep iterative web search is enabled
     deepResearchMaxRounds: 3,    // Max rounds for deep research
 };
@@ -151,6 +152,7 @@ const dom = {
     settingRagEnabled: $("#setting-rag-enabled"),
     settingWebSearchEnabled: $("#setting-web-search-enabled"),
     settingThinkingEnabled: $("#setting-thinking-enabled"),
+    settingFileGenerationEnabled: $("#setting-file-generation-enabled"),
     settingChat2Enabled: $("#setting-chat2-enabled"),
     settingChat2RagContainer: $("#setting-chat2-rag-container"),
     settingChat2RagEnabled: $("#setting-chat2-rag-enabled"),
@@ -1286,6 +1288,9 @@ async function fetchConfig() {
         // Store thinking setting
         state.thinkingEnabled = !!data.thinking_enabled;
 
+        // Store file generation setting
+        state.fileGenerationEnabled = !!data.file_generation_enabled;
+
         // Store deep research settings
         state.deepResearchEnabled = !!data.deep_research_enabled;
         state.deepResearchMaxRounds = data.deep_research_max_rounds || 3;
@@ -1891,6 +1896,125 @@ function hideWelcome() {
     if (dom.welcomeScreen) dom.welcomeScreen.style.display = "none";
 }
 
+// ── File Generation and Detection Helpers ────────────────────────────────────
+function parseCodeBlockParams(code, langOrInfostring) {
+    let filename = null;
+    let cleanLang = (langOrInfostring || "").trim();
+    
+    // Check if langOrInfostring contains filename or name
+    // e.g. python filename="main.py" or python name="main.py"
+    const filenameMatch = cleanLang.match(/(?:filename|name)=["']?([^"'\s]+)["']?/i);
+    if (filenameMatch) {
+        filename = filenameMatch[1];
+        // Clean langLabel: remove filename="main.py" part
+        cleanLang = cleanLang.replace(/(?:filename|name)=["']?([^"'\s]+)["']?/i, "").trim();
+    }
+    
+    // If not found, check the first few lines of code for comments specifying the filename
+    if (!filename && code) {
+        const lines = code.trim().split("\n");
+        if (lines.length > 0) {
+            const firstLine = lines[0].trim();
+            // Match patterns like:
+            // # filepath: script.py
+            // # filename: script.py
+            // # script.py
+            // // filepath: script.js
+            // // script.js
+            // /* filepath: style.css */
+            // /* style.css */
+            // <!-- filename: index.html -->
+            // <!-- index.html -->
+            const commentMatch = firstLine.match(/^(?:#|\/\/|\/\*|<!--)\s*(?:file(?:path|name):\s*)?([\w.\-]+\.[\w]+)\s*(?:\*\/|-->)?$/i);
+            if (commentMatch) {
+                filename = commentMatch[1];
+            }
+        }
+    }
+    
+    // Determine a default filename if we need one
+    let defaultFilename = "download.txt";
+    if (cleanLang) {
+        const baseLang = cleanLang.split(/\s+/)[0].toLowerCase();
+        if (baseLang === "python" || baseLang === "py") defaultFilename = "script.py";
+        else if (baseLang === "javascript" || baseLang === "js") defaultFilename = "script.js";
+        else if (baseLang === "typescript" || baseLang === "ts") defaultFilename = "script.ts";
+        else if (baseLang === "html") defaultFilename = "index.html";
+        else if (baseLang === "css") defaultFilename = "style.css";
+        else if (baseLang === "json") defaultFilename = "data.json";
+        else if (baseLang === "csv") defaultFilename = "data.csv";
+        else if (baseLang === "markdown" || baseLang === "md") defaultFilename = "document.md";
+        else if (baseLang === "sh" || baseLang === "bash") defaultFilename = "script.sh";
+    }
+    
+    return {
+        filename: filename,
+        cleanLang: cleanLang || "code",
+        defaultFilename: defaultFilename
+    };
+}
+
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function getFileIconSvg(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    let color = "var(--text-tertiary)";
+    
+    if (ext === 'py') {
+        color = '#3572A5'; // Python blue
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>`;
+    } else if (ext === 'js' || ext === 'ts') {
+        color = ext === 'js' ? '#f1e05a' : '#3178c6'; // JS yellow / TS blue
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12z"></path>
+            <path d="M12 2v20"></path>
+        </svg>`;
+    } else if (ext === 'html') {
+        color = '#e34c26'; // HTML red-orange
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>`;
+    } else if (ext === 'css') {
+        color = '#563d7c'; // CSS purple
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>`;
+    } else if (ext === 'json') {
+        color = '#00cecb'; // JSON teal
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>`;
+    } else if (ext === 'csv') {
+        color = '#107c41'; // CSV green
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="9" y1="15" x2="15" y2="15"></line>
+            <line x1="12" y1="12" x2="12" y2="18"></line>
+        </svg>`;
+    } else {
+        return `<svg style="color: ${color}; width: 14px; height: 14px; stroke: currentColor;" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>`;
+    }
+}
+
+
 // ── Markdown Rendering ───────────────────────────────────────────────────────
 // Configure marked if it is loaded
 if (typeof marked !== 'undefined') {
@@ -1907,14 +2031,56 @@ if (typeof marked !== 'undefined') {
             code = codeOrObj || "";
             lang = infostring || "";
         }
-        const langLabel = lang || "code";
-        return `<div class="code-block-wrapper">
-            <div class="code-block-header">
-                <span class="code-lang">${escapeHtml(langLabel)}</span>
-                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
-            </div>
-            <pre><code class="language-${escapeHtml(langLabel)}">${escapeHtml(code.trim())}</code></pre>
-        </div>`;
+        
+        if (!state.fileGenerationEnabled) {
+            const langLabel = lang || "code";
+            return `<div class="code-block-wrapper">
+                <div class="code-block-header">
+                    <span class="code-lang">${escapeHtml(langLabel)}</span>
+                    <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                </div>
+                <pre><code class="language-${escapeHtml(langLabel)}">${escapeHtml(code.trim())}</code></pre>
+            </div>`;
+        }
+        
+        const { filename, cleanLang, defaultFilename } = parseCodeBlockParams(code, lang);
+        const downloadFilename = filename || defaultFilename;
+        
+        let sizeInBytes = 0;
+        try {
+            sizeInBytes = new Blob([code]).size;
+        } catch (e) {
+            sizeInBytes = code.length;
+        }
+        const fileSizeStr = formatBytes(sizeInBytes);
+        
+        if (filename) {
+            return `<div class="code-block-wrapper file-block">
+                <div class="code-block-header file-detected">
+                    <div class="file-info-container btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}" title="Click to download ${escapeHtml(downloadFilename)}">
+                        ${getFileIconSvg(downloadFilename)}
+                        <span class="code-lang file-name-text">${escapeHtml(downloadFilename)}</span>
+                        <span class="file-size-badge">${fileSizeStr}</span>
+                    </div>
+                    <div class="code-block-actions">
+                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                        <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                    </div>
+                </div>
+                <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+            </div>`;
+        } else {
+            return `<div class="code-block-wrapper">
+                <div class="code-block-header">
+                    <span class="code-lang">${escapeHtml(cleanLang)}</span>
+                    <div class="code-block-actions">
+                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                        <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                    </div>
+                </div>
+                <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+            </div>`;
+        }
     };
     
     // Customize table rendering to apply styling classes
@@ -2048,23 +2214,12 @@ function renderMarkdownFallback(text) {
         const part = parts[i];
         if (part.startsWith("```")) {
             // It's a code block
-            const match = part.match(/```(\w*)\n([\s\S]*?)```/);
+            const match = part.match(/```([^\n]*)\n([\s\S]*?)```/);
             if (match) {
                 const lang = match[1] || "code";
                 const code = match[2];
-                htmlResult += `<div class="code-block-wrapper">
-                    <div class="code-block-header">
-                        <span class="code-lang">${escapeHtml(lang)}</span>
-                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
-                    </div>
-                    <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
-                </div>`;
-            } else {
-                // Incomplete code block (e.g. streaming)
-                const langMatch = part.match(/```(\w*)\n([\s\S]*)/);
-                if (langMatch) {
-                    const lang = langMatch[1] || "code";
-                    const code = langMatch[2];
+                
+                if (!state.fileGenerationEnabled) {
                     htmlResult += `<div class="code-block-wrapper">
                         <div class="code-block-header">
                             <span class="code-lang">${escapeHtml(lang)}</span>
@@ -2072,6 +2227,97 @@ function renderMarkdownFallback(text) {
                         </div>
                         <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
                     </div>`;
+                } else {
+                    const { filename, cleanLang, defaultFilename } = parseCodeBlockParams(code, lang);
+                    const downloadFilename = filename || defaultFilename;
+                let sizeInBytes = 0;
+                try {
+                    sizeInBytes = new Blob([code]).size;
+                } catch (e) {
+                    sizeInBytes = code.length;
+                }
+                const fileSizeStr = formatBytes(sizeInBytes);
+
+                if (filename) {
+                    htmlResult += `<div class="code-block-wrapper file-block">
+                        <div class="code-block-header file-detected">
+                            <div class="file-info-container btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}" title="Click to download ${escapeHtml(downloadFilename)}">
+                                ${getFileIconSvg(downloadFilename)}
+                                <span class="code-lang file-name-text">${escapeHtml(downloadFilename)}</span>
+                                <span class="file-size-badge">${fileSizeStr}</span>
+                            </div>
+                            <div class="code-block-actions">
+                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                                <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                            </div>
+                        </div>
+                        <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+                    </div>`;
+                } else {
+                    htmlResult += `<div class="code-block-wrapper">
+                        <div class="code-block-header">
+                            <span class="code-lang">${escapeHtml(cleanLang)}</span>
+                            <div class="code-block-actions">
+                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                                <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                            </div>
+                        </div>
+                        <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+                    </div>`;
+                }
+            } else {
+                // Incomplete code block (e.g. streaming)
+                const langMatch = part.match(/```([^\n]*)\n([\s\S]*)/);
+                if (langMatch) {
+                    const lang = langMatch[1] || "code";
+                    const code = langMatch[2];
+                    
+                    if (!state.fileGenerationEnabled) {
+                        htmlResult += `<div class="code-block-wrapper">
+                            <div class="code-block-header">
+                                <span class="code-lang">${escapeHtml(lang)}</span>
+                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                            </div>
+                            <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
+                        </div>`;
+                    } else {
+                        const { filename, cleanLang, defaultFilename } = parseCodeBlockParams(code, lang);
+                        const downloadFilename = filename || defaultFilename;
+                    let sizeInBytes = 0;
+                    try {
+                        sizeInBytes = new Blob([code]).size;
+                    } catch (e) {
+                        sizeInBytes = code.length;
+                    }
+                    const fileSizeStr = formatBytes(sizeInBytes);
+
+                    if (filename) {
+                        htmlResult += `<div class="code-block-wrapper file-block">
+                            <div class="code-block-header file-detected">
+                                <div class="file-info-container btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}" title="Click to download ${escapeHtml(downloadFilename)}">
+                                    ${getFileIconSvg(downloadFilename)}
+                                    <span class="code-lang file-name-text">${escapeHtml(downloadFilename)}</span>
+                                    <span class="file-size-badge">${fileSizeStr}</span>
+                                </div>
+                                <div class="code-block-actions">
+                                    <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                                    <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                                </div>
+                            </div>
+                            <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+                        </div>`;
+                    } else {
+                        htmlResult += `<div class="code-block-wrapper">
+                            <div class="code-block-header">
+                                <span class="code-lang">${escapeHtml(cleanLang)}</span>
+                                <div class="code-block-actions">
+                                    <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                                    <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                                </div>
+                            </div>
+                            <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+                        </div>`;
+                    }
                 } else {
                     htmlResult += `<pre><code>${escapeHtml(part)}</code></pre>`;
                 }
@@ -2227,6 +2473,29 @@ function attachCodeCopyButtons(container) {
                 console.error("Failed to copy code block:", err);
                 showToast("Failed to copy code block", "error");
             });
+        });
+    });
+
+    container.querySelectorAll(".btn-download-code").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const code = decodeURIComponent(btn.dataset.code);
+            const filename = btn.dataset.filename || "download.txt";
+            try {
+                const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast(`Downloaded ${filename}`, "success");
+            } catch (err) {
+                console.error("Failed to download file:", err);
+                showToast("Failed to download file", "error");
+            }
         });
     });
 }
@@ -3018,6 +3287,9 @@ function openSettingsModal() {
         if (dom.settingThinkingEnabled) {
             dom.settingThinkingEnabled.checked = !!state.thinkingEnabled;
         }
+        if (dom.settingFileGenerationEnabled) {
+            dom.settingFileGenerationEnabled.checked = !!state.fileGenerationEnabled;
+        }
         if (dom.settingChat2Enabled) {
             dom.settingChat2Enabled.checked = !!state.chat2Enabled;
         }
@@ -3055,6 +3327,7 @@ async function saveSettings() {
     const newRagEnabled = dom.settingRagEnabled ? dom.settingRagEnabled.checked : false;
     const newWebSearchEnabled = dom.settingWebSearchEnabled ? dom.settingWebSearchEnabled.checked : false;
     const newThinkingEnabled = dom.settingThinkingEnabled ? dom.settingThinkingEnabled.checked : true;
+    const newFileGenerationEnabled = dom.settingFileGenerationEnabled ? dom.settingFileGenerationEnabled.checked : true;
     const newChat2Enabled = dom.settingChat2Enabled ? dom.settingChat2Enabled.checked : false;
     const newChat2RagEnabled = dom.settingChat2RagEnabled ? dom.settingChat2RagEnabled.checked : false;
     const newDeepResearchEnabled = dom.settingDeepResearchEnabled ? dom.settingDeepResearchEnabled.checked : false;
@@ -3100,6 +3373,7 @@ async function saveSettings() {
                 rag_enabled: newRagEnabled,
                 web_search_enabled: newWebSearchEnabled,
                 thinking_enabled: newThinkingEnabled,
+                file_generation_enabled: newFileGenerationEnabled,
                 chat2_enabled: newChat2Enabled,
                 chat2_rag_enabled: newChat2RagEnabled,
                 deep_research_enabled: newDeepResearchEnabled,
@@ -3137,6 +3411,7 @@ async function saveSettings() {
         state.chat2Enabled = !!data.chat2_enabled;
         state.chat2RagEnabled = !!data.chat2_rag_enabled;
         state.thinkingEnabled = !!data.thinking_enabled;
+        state.fileGenerationEnabled = !!data.file_generation_enabled;
         state.deepResearchEnabled = !!data.deep_research_enabled;
         state.deepResearchMaxRounds = data.deep_research_max_rounds || 3;
         updateDeepResearchUI();
