@@ -2230,59 +2230,6 @@ function renderMarkdownFallback(text) {
                 } else {
                     const { filename, cleanLang, defaultFilename } = parseCodeBlockParams(code, lang);
                     const downloadFilename = filename || defaultFilename;
-                let sizeInBytes = 0;
-                try {
-                    sizeInBytes = new Blob([code]).size;
-                } catch (e) {
-                    sizeInBytes = code.length;
-                }
-                const fileSizeStr = formatBytes(sizeInBytes);
-
-                if (filename) {
-                    htmlResult += `<div class="code-block-wrapper file-block">
-                        <div class="code-block-header file-detected">
-                            <div class="file-info-container btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}" title="Click to download ${escapeHtml(downloadFilename)}">
-                                ${getFileIconSvg(downloadFilename)}
-                                <span class="code-lang file-name-text">${escapeHtml(downloadFilename)}</span>
-                                <span class="file-size-badge">${fileSizeStr}</span>
-                            </div>
-                            <div class="code-block-actions">
-                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
-                                <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
-                            </div>
-                        </div>
-                        <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
-                    </div>`;
-                } else {
-                    htmlResult += `<div class="code-block-wrapper">
-                        <div class="code-block-header">
-                            <span class="code-lang">${escapeHtml(cleanLang)}</span>
-                            <div class="code-block-actions">
-                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
-                                <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
-                            </div>
-                        </div>
-                        <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
-                    </div>`;
-                }
-            } else {
-                // Incomplete code block (e.g. streaming)
-                const langMatch = part.match(/```([^\n]*)\n([\s\S]*)/);
-                if (langMatch) {
-                    const lang = langMatch[1] || "code";
-                    const code = langMatch[2];
-                    
-                    if (!state.fileGenerationEnabled) {
-                        htmlResult += `<div class="code-block-wrapper">
-                            <div class="code-block-header">
-                                <span class="code-lang">${escapeHtml(lang)}</span>
-                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
-                            </div>
-                            <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
-                        </div>`;
-                    } else {
-                        const { filename, cleanLang, defaultFilename } = parseCodeBlockParams(code, lang);
-                        const downloadFilename = filename || defaultFilename;
                     let sizeInBytes = 0;
                     try {
                         sizeInBytes = new Blob([code]).size;
@@ -2317,6 +2264,61 @@ function renderMarkdownFallback(text) {
                             </div>
                             <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
                         </div>`;
+                    }
+                }
+            } else {
+                // Incomplete code block (e.g. streaming)
+                const langMatch = part.match(/```([^\n]*)\n([\s\S]*)/);
+                if (langMatch) {
+                    const lang = langMatch[1] || "code";
+                    const code = langMatch[2];
+                    
+                    if (!state.fileGenerationEnabled) {
+                        htmlResult += `<div class="code-block-wrapper">
+                            <div class="code-block-header">
+                                <span class="code-lang">${escapeHtml(lang)}</span>
+                                <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                            </div>
+                            <pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>
+                        </div>`;
+                    } else {
+                        const { filename, cleanLang, defaultFilename } = parseCodeBlockParams(code, lang);
+                        const downloadFilename = filename || defaultFilename;
+                        let sizeInBytes = 0;
+                        try {
+                            sizeInBytes = new Blob([code]).size;
+                        } catch (e) {
+                            sizeInBytes = code.length;
+                        }
+                        const fileSizeStr = formatBytes(sizeInBytes);
+
+                        if (filename) {
+                            htmlResult += `<div class="code-block-wrapper file-block">
+                                <div class="code-block-header file-detected">
+                                    <div class="file-info-container btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}" title="Click to download ${escapeHtml(downloadFilename)}">
+                                        ${getFileIconSvg(downloadFilename)}
+                                        <span class="code-lang file-name-text">${escapeHtml(downloadFilename)}</span>
+                                        <span class="file-size-badge">${fileSizeStr}</span>
+                                    </div>
+                                    <div class="code-block-actions">
+                                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                                        <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                                    </div>
+                                </div>
+                                <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+                            </div>`;
+                        } else {
+                            htmlResult += `<div class="code-block-wrapper">
+                                <div class="code-block-header">
+                                    <span class="code-lang">${escapeHtml(cleanLang)}</span>
+                                    <div class="code-block-actions">
+                                        <button class="btn-copy-code" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy</button>
+                                        <button class="btn-download-code" data-filename="${escapeHtml(downloadFilename)}" data-code="${encodeURIComponent(code.trim())}"><svg class="action-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download</button>
+                                    </div>
+                                </div>
+                                <pre><code class="language-${escapeHtml(cleanLang)}">${escapeHtml(code.trim())}</code></pre>
+                            </div>`;
+                        }
                     }
                 } else {
                     htmlResult += `<pre><code>${escapeHtml(part)}</code></pre>`;
